@@ -1,262 +1,136 @@
-import os, json, sys
+import os, json
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
-
 from datasets import Dataset
-from sklearn.metrics import f1_score, accuracy_score, classification_report
-from sklearn.utils.class_weight import compute_class_weight
+from torch.utils.data import DataLoader
+from sklearn.metrics import classification_report, f1_score, accuracy_score
 
-from transformers import (
-    AutoTokenizer,
-    AutoModel,
-    TrainingArguments,
-    Trainer,
-    EarlyStoppingCallback,
-    DataCollatorWithPadding,
-)
+from transformers import AutoTokenizer, AutoModel, DataCollatorWithPadding
+from safetensors.torch import load_file
 
-# ---------------- CONFIG ----------------
-TRAIN_PATH = r"data\train.csv"
-VAL_PATH   = r"data\val.csv"
-TEST_PATH  = r"data\test.csv"  # not used in training, used in eval script below
+# ========= CONFIG =========
+MODEL_DIR = r"outputs\edu_classifier_multitask"
+TEST_PATH = r"data\test.csv"
+BATCH = 32
+MAX_LENGTH = 256
 
-OUT_DIR = r"outputs\edu_classifier_multitask"
-
-# Use your MLM-adapted model folder if it exists:
+# Must match what you trained with:
 BASE_MODEL = r"outputs\cfpb_outputs\distilbert_cfpb_mlm"
 FALLBACK_MODEL = "distilbert-base-uncased"
+# ==========================
 
-MAX_LENGTH = 256
-SEED = 42
-EPOCHS = 4
-BATCH = 16
-LR = 2e-5
-WEIGHT_DECAY = 0.01
+print("📥 Loading:", TEST_PATH)
+df = pd.read_csv(TEST_PATH, low_memory=False)
 
-# loss weights: tune if needed
-LAMBDA_LABEL = 1.0
-LAMBDA_PRIORITY = 1.0
-# ---------------------------------------
-
-os.makedirs(OUT_DIR, exist_ok=True)
-
-print("📥 Loading split datasets...")
-train_df = pd.read_csv(TRAIN_PATH)
-val_df   = pd.read_csv(VAL_PATH)
-
-required_cols = {"text", "label_id", "priority_id"}
-missing = required_cols - set(train_df.columns)
+need = {"text", "label_id", "priority_id"}
+missing = need - set(df.columns)
 if missing:
-    raise ValueError(f"Missing columns in train.csv: {missing}")
+    raise ValueError(f"❌ Missing columns in test.csv: {missing}")
 
-# HF expects "labels" by default; we keep both:
-train_df = train_df[["text", "label_id", "priority_id"]].rename(
-    columns={"label_id": "labels", "priority_id": "priority_labels"}
-)
-val_df = val_df[["text", "label_id", "priority_id"]].rename(
+test_df = df[["text", "label_id", "priority_id"]].rename(
     columns={"label_id": "labels", "priority_id": "priority_labels"}
 )
 
-# --- label mapping ---
-map_path = os.path.join(r"outputs\edu_classifier", "label_mapping.json")
-with open(map_path, "r", encoding="utf-8") as f:
-    mapping = json.load(f)
+# --- mappings saved during training ---
+label_map_path = os.path.join(MODEL_DIR, "id_to_label.json")
+prio_map_path  = os.path.join(MODEL_DIR, "id_to_priority.json")
 
-id_to_label = {int(k): v for k, v in mapping["id_to_label"].items()}
+for p in [label_map_path, prio_map_path]:
+    if not os.path.exists(p):
+        raise FileNotFoundError(f"Missing: {p}")
+
+with open(label_map_path, "r", encoding="utf-8") as f:
+    id_to_label = {int(k): v for k, v in json.load(f).items()}
+
+with open(prio_map_path, "r", encoding="utf-8") as f:
+    id_to_priority = {int(k): v for k, v in json.load(f).items()}
+
 num_labels = len(id_to_label)
+num_priority = len(id_to_priority)
 
-# priority mapping (create from data)
-priority_ids = sorted(train_df["priority_labels"].unique().tolist())
-num_priority = len(priority_ids)
+# --- HF dataset ---
+test_ds = Dataset.from_pandas(test_df)
 
-# build id->name if you already have it; otherwise infer typical ordering
-# adjust these if your ids differ
-default_priority_names = {0: "Low", 1: "Medium", 2: "High"}
-id_to_priority = {int(i): default_priority_names.get(int(i), f"P{i}") for i in priority_ids}
+backbone_name = BASE_MODEL if os.path.isdir(BASE_MODEL) else FALLBACK_MODEL
+print("🧠 Loading backbone:", backbone_name)
 
-print("🏷️ Labels:", num_labels, "| Priority classes:", num_priority)
-
-# -------- class weights (important) --------
-label_classes = np.unique(train_df["labels"])
-label_w = compute_class_weight("balanced", classes=label_classes, y=train_df["labels"])
-label_w = torch.tensor(label_w, dtype=torch.float)
-
-prio_classes = np.unique(train_df["priority_labels"])
-prio_w = compute_class_weight("balanced", classes=prio_classes, y=train_df["priority_labels"])
-prio_w = torch.tensor(prio_w, dtype=torch.float)
-
-# -------- datasets --------
-train_ds = Dataset.from_pandas(train_df)
-val_ds   = Dataset.from_pandas(val_df)
-
-base_model = BASE_MODEL if os.path.isdir(BASE_MODEL) else FALLBACK_MODEL
-print("🧠 Using base model:", base_model)
-
-tokenizer = AutoTokenizer.from_pretrained(base_model)
+tokenizer = AutoTokenizer.from_pretrained(backbone_name)
 
 def tok_fn(batch):
     return tokenizer(batch["text"], truncation=True, max_length=MAX_LENGTH)
 
-train_ds = train_ds.map(tok_fn, batched=True, remove_columns=["text"])
-val_ds   = val_ds.map(tok_fn, batched=True, remove_columns=["text"])
+test_ds = test_ds.map(tok_fn, batched=True, remove_columns=["text"])
 
-collator = DataCollatorWithPadding(tokenizer=tokenizer)
+collator = DataCollatorWithPadding(tokenizer)
+loader = DataLoader(test_ds, batch_size=BATCH, collate_fn=collator)
 
-# -------- multitask model --------
+# --- model definition must match training ---
 class DistilBertMultiTask(nn.Module):
-    def __init__(self, model_name: str, num_labels: int, num_priority: int):
+    def __init__(self, backbone_name: str, num_labels: int, num_priority: int):
         super().__init__()
-        self.backbone = AutoModel.from_pretrained(model_name)
+        self.backbone = AutoModel.from_pretrained(backbone_name)
         hidden = self.backbone.config.hidden_size
         self.dropout = nn.Dropout(0.2)
         self.label_head = nn.Linear(hidden, num_labels)
         self.prio_head  = nn.Linear(hidden, num_priority)
 
-    def forward(self, input_ids=None, attention_mask=None, labels=None, priority_labels=None):
+    # ✅ IMPORTANT: accept token_type_ids / extra kwargs safely (DistilBERT ignores them)
+    def forward(self, input_ids=None, attention_mask=None, token_type_ids=None, **kwargs):
         out = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
-        # DistilBERT: use [CLS]-like first token
         pooled = out.last_hidden_state[:, 0]
         pooled = self.dropout(pooled)
+        return self.label_head(pooled), self.prio_head(pooled)
 
-        label_logits = self.label_head(pooled)
-        prio_logits  = self.prio_head(pooled)
+model = DistilBertMultiTask(backbone_name, num_labels, num_priority)
 
-        loss = None
-        if labels is not None and priority_labels is not None:
-            loss_fct_label = nn.CrossEntropyLoss(weight=label_w.to(label_logits.device))
-            loss_fct_prio  = nn.CrossEntropyLoss(weight=prio_w.to(prio_logits.device))
-            loss_label = loss_fct_label(label_logits, labels)
-            loss_prio  = loss_fct_prio(prio_logits, priority_labels)
-            loss = LAMBDA_LABEL * loss_label + LAMBDA_PRIORITY * loss_prio
+# --- load your trained weights (safetensors) ---
+weights_path = os.path.join(MODEL_DIR, "model.safetensors")
+if not os.path.exists(weights_path):
+    raise FileNotFoundError(f"Missing: {weights_path}")
 
-        return {
-            "loss": loss,
-            "label_logits": label_logits,
-            "priority_logits": prio_logits,
-        }
+state_dict = load_file(weights_path)
+model.load_state_dict(state_dict, strict=True)
 
-model = DistilBertMultiTask(base_model, num_labels=num_labels, num_priority=num_priority)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model.to(device)
+model.eval()
+print("✅ Device:", device)
 
-# -------- metrics --------
-def compute_metrics_multitask(eval_pred):
-    # eval_pred.predictions will be a tuple if we return multiple logits;
-    # but Trainer expects "logits" by default. We'll override prediction_step in Trainer.
-    raise RuntimeError("compute_metrics is handled inside MultiTaskTrainer.")
+# --- evaluation ---
+y_label_true, y_label_pred = [], []
+y_prio_true, y_prio_pred = [], []
 
-class MultiTaskTrainer(Trainer):
-    def compute_loss(self, model, inputs, return_outputs=False):
-        labels = inputs.get("labels")
-        priority_labels = inputs.get("priority_labels")
-        outputs = model(
-            input_ids=inputs["input_ids"],
-            attention_mask=inputs.get("attention_mask"),
-            labels=labels,
-            priority_labels=priority_labels,
-        )
-        loss = outputs["loss"]
-        return (loss, outputs) if return_outputs else loss
+with torch.no_grad():
+    for batch in loader:
+        labels = batch.pop("labels").cpu().numpy()
+        prios  = batch.pop("priority_labels").cpu().numpy()
 
-    def prediction_step(self, model, inputs, prediction_loss_only=False, ignore_keys=None):
-        # Make Trainer collect both logits
-        with torch.no_grad():
-            outputs = model(
-                input_ids=inputs["input_ids"],
-                attention_mask=inputs.get("attention_mask"),
-                labels=None,
-                priority_labels=None,
-            )
-        label_logits = outputs["label_logits"]
-        prio_logits  = outputs["priority_logits"]
+        # ✅ Robust: pass only keys we need (avoids token_type_ids issues completely)
+        input_ids = batch["input_ids"].to(device)
+        attention_mask = batch.get("attention_mask")
+        attention_mask = attention_mask.to(device) if attention_mask is not None else None
 
-        # Also compute loss if labels provided
-        loss = None
-        if "labels" in inputs and "priority_labels" in inputs:
-            outputs_loss = model(
-                input_ids=inputs["input_ids"],
-                attention_mask=inputs.get("attention_mask"),
-                labels=inputs["labels"],
-                priority_labels=inputs["priority_labels"],
-            )
-            loss = outputs_loss["loss"].detach()
+        label_logits, prio_logits = model(input_ids=input_ids, attention_mask=attention_mask)
 
-        if prediction_loss_only:
-            return (loss, None, None)
+        y_label_true.extend(labels)
+        y_prio_true.extend(prios)
+        y_label_pred.extend(label_logits.argmax(dim=1).cpu().numpy())
+        y_prio_pred.extend(prio_logits.argmax(dim=1).cpu().numpy())
 
-        # Return (loss, logits, labels) where logits can be a tuple
-        labels = torch.stack([inputs["labels"], inputs["priority_labels"]], dim=1)
-        return (loss, (label_logits, prio_logits), labels)
+print("\n====================")
+print("📊 LABEL REPORT")
+print("====================")
+print(classification_report(y_label_true, y_label_pred, digits=4))
 
-    def compute_metrics(self, eval_pred):
-        (label_logits, prio_logits), labels = eval_pred
-        y_label_true = labels[:, 0]
-        y_prio_true  = labels[:, 1]
+print("\n====================")
+print("📊 PRIORITY REPORT")
+print("====================")
+print(classification_report(y_prio_true, y_prio_pred, digits=4))
 
-        y_label_pred = np.argmax(label_logits, axis=1)
-        y_prio_pred  = np.argmax(prio_logits, axis=1)
-
-        return {
-            "label_acc": accuracy_score(y_label_true, y_label_pred),
-            "label_f1_macro": f1_score(y_label_true, y_label_pred, average="macro"),
-            "prio_acc": accuracy_score(y_prio_true, y_prio_pred),
-            "prio_f1_macro": f1_score(y_prio_true, y_prio_pred, average="macro"),
-            # overall score you can optimize
-            "f1_macro": (f1_score(y_label_true, y_label_pred, average="macro")
-                         + f1_score(y_prio_true, y_prio_pred, average="macro")) / 2.0
-        }
-
-use_fp16 = torch.cuda.is_available()
-print("✅ CUDA available:", use_fp16)
-if use_fp16:
-    print("✅ GPU:", torch.cuda.get_device_name(0))
-
-training_args = TrainingArguments(
-    output_dir=OUT_DIR,
-    learning_rate=LR,
-    per_device_train_batch_size=BATCH,
-    per_device_eval_batch_size=BATCH,
-    num_train_epochs=EPOCHS,
-    weight_decay=WEIGHT_DECAY,
-    logging_steps=50,
-    eval_strategy="steps",
-    eval_steps=300,
-    save_strategy="steps",
-    save_steps=300,
-    save_total_limit=2,
-    load_best_model_at_end=True,
-    metric_for_best_model="f1_macro",
-    greater_is_better=True,
-    fp16=use_fp16,
-    report_to=["tensorboard"],  # ✅ TensorBoard
-    seed=SEED,
-)
-
-trainer = MultiTaskTrainer(
-    model=model,
-    args=training_args,
-    train_dataset=train_ds,
-    eval_dataset=val_ds,
-    data_collator=collator,
-    callbacks=[EarlyStoppingCallback(early_stopping_patience=2)],
-)
-
-print("🚀 Training (multi-task)...")
-trainer.train()
-
-print("💾 Saving model + tokenizer + mappings...")
-trainer.save_model(OUT_DIR)
-tokenizer.save_pretrained(OUT_DIR)
-
-# Save mappings for inference
-with open(os.path.join(OUT_DIR, "id_to_label.json"), "w", encoding="utf-8") as f:
-    json.dump({str(k): v for k, v in id_to_label.items()}, f, indent=2)
-with open(os.path.join(OUT_DIR, "id_to_priority.json"), "w", encoding="utf-8") as f:
-    json.dump({str(k): v for k, v in id_to_priority.items()}, f, indent=2)
-
-print("✅ Done!")
-print(f"📈 TensorBoard logs: run ->  tensorboard --logdir {OUT_DIR}")
+print("\n✅ Label Macro-F1:", f1_score(y_label_true, y_label_pred, average="macro"))
+print("✅ Priority Macro-F1:", f1_score(y_prio_true, y_prio_pred, average="macro"))
+print("✅ Label Accuracy:", accuracy_score(y_label_true, y_label_pred))
+print("✅ Priority Accuracy:", accuracy_score(y_prio_true, y_prio_pred))
