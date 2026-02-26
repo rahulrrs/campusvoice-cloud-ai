@@ -1,42 +1,35 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { savePendingComplaint, deletePendingComplaint } from "@/offline/db";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { 
-  Send, 
-  AlertCircle, 
-  FileText,
-  Upload,
-  CheckCircle2
-} from "lucide-react";
+import { Send, AlertCircle, FileText, Upload, CheckCircle2 } from "lucide-react";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { categories } from "@/data/mockComplaints";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCreateComplaint } from "@/hooks/useComplaints";
+import { complaintsApi } from "@/integrations/aws/client";
+import type { QueuedAttachment } from "@/offline/db";
 
 const SubmitComplaint = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user, loading } = useAuth();
   const createComplaint = useCreateComplaint();
+  const adminEmails = (import.meta.env.VITE_ADMIN_EMAILS ?? "")
+    .split(",")
+    .map((v: string) => v.trim().toLowerCase())
+    .filter((v: string) => v.length > 0);
+  const isAdmin = !!user?.email && adminEmails.includes(user.email.toLowerCase());
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
   const [formData, setFormData] = useState({
     title: "",
-    category: "",
-    priority: "medium",
     description: "",
   });
 
@@ -44,101 +37,132 @@ const SubmitComplaint = () => {
     if (!loading && !user) {
       navigate("/auth");
     }
-  }, [user, loading, navigate]);
+    if (!loading && isAdmin) {
+      navigate("/admin");
+    }
+  }, [user, loading, isAdmin, navigate]);
 
-const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
+  const totalSelectedSizeMb = useMemo(
+    () => selectedFiles.reduce((acc, file) => acc + file.size, 0) / 1024 / 1024,
+    [selectedFiles]
+  );
 
-  if (!formData.title || !formData.category || !formData.description) {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!formData.title || !formData.description) {
+      toast({
+        title: "Missing information",
+        description: "Please fill in all required fields.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!user?.id) {
+      toast({
+        title: "Not signed in",
+        description: "Please sign in again.",
+        variant: "destructive",
+      });
+      navigate("/auth");
+      return;
+    }
+
+    let attachmentKeys: string[] = [];
+    let queuedAttachments: QueuedAttachment[] = [];
+
+    if (navigator.onLine && selectedFiles.length > 0) {
+      try {
+        setIsUploading(true);
+        attachmentKeys = await Promise.all(
+          selectedFiles.map(async (file) => {
+            const contentType = file.type || "application/octet-stream";
+            const uploadMeta = await complaintsApi.createUploadUrl({
+              fileName: file.name,
+              contentType,
+            });
+            await complaintsApi.uploadToS3(uploadMeta.uploadUrl, file, contentType);
+            return uploadMeta.key;
+          })
+        );
+      } catch {
+        toast({
+          title: "Attachment upload failed",
+          description: "Could not upload one or more files. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      } finally {
+        setIsUploading(false);
+      }
+    } else if (selectedFiles.length > 0) {
+      queuedAttachments = selectedFiles.map((file) => ({
+        name: file.name,
+        type: file.type || "application/octet-stream",
+        size: file.size,
+        file,
+      }));
+    }
+
+    const payload = {
+      title: formData.title,
+      description: formData.description,
+      user_id: user.id,
+      attachment_keys: attachmentKeys,
+      queued_attachments: queuedAttachments,
+    };
+
+    const localId = await savePendingComplaint(payload);
+
     toast({
-      title: "Missing Information",
-      description: "Please fill in all required fields.",
-      variant: "destructive",
+      title: "Saved",
+      description:
+        "Saved locally. If online it will sync now, otherwise it will sync when internet returns.",
     });
-    return;
-  }
 
-  if (!user?.id) {
-    toast({
-      title: "Not signed in",
-      description: "Please sign in again.",
-      variant: "destructive",
-    });
-    navigate("/auth");
-    return;
-  }
+    try {
+      await createComplaint.mutateAsync({
+        title: payload.title,
+        description: payload.description,
+        attachment_keys: payload.attachment_keys,
+        queued_attachments: payload.queued_attachments,
+        already_queued: true,
+      });
+      await deletePendingComplaint(localId);
+    } catch {
+      // Keep queued for auto-sync.
+    }
 
-  const payload = {
-    title: formData.title,
-    description: formData.description,
-    category: formData.category,
-    priority: formData.priority || "medium",
-    user_id: user.id,
+    navigate("/dashboard");
   };
 
-  // ✅ ALWAYS save locally first (guaranteed offline support)
-  const localId = await savePendingComplaint(payload);
-
-  toast({
-    title: "Saved ✅",
-    description:
-      "Saved locally. If you're online it will sync now; otherwise it will sync when internet returns.",
-  });
-
-  // ✅ Try to submit online; if it succeeds, remove local queued copy
-  try {
-    await createComplaint.mutateAsync({
-      title: payload.title,
-      description: payload.description,
-      category: payload.category,
-      priority: payload.priority,
-    });
-
-    await deletePendingComplaint(localId);
-  } catch {
-    // keep it queued for auto-sync
+  if (loading && navigator.onLine) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
   }
 
-  navigate("/dashboard");
-};
-// ✅ Show spinner only when ONLINE
-if (loading && navigator.onLine) {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-    </div>
-  );
-}
-
-// ✅ OFFLINE: don't block the page
-if (!navigator.onLine && loading) {
-  // allow user to use offline submit (IndexedDB)
-  // do NOT return spinner
-}
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Header />
-      
+
       <main className="flex-1">
-        {/* Header */}
         <section className="border-b bg-card">
           <div className="container mx-auto px-4 py-8">
             <h1 className="text-3xl font-bold text-foreground">Submit a Complaint</h1>
             <p className="text-muted-foreground mt-1">
-              Share your concerns and we'll work to resolve them
+              Share your concerns and we will work to resolve them
             </p>
           </div>
         </section>
 
-        {/* Form Section */}
         <section className="container mx-auto px-4 py-8">
           <div className="max-w-3xl mx-auto">
             <div className="grid gap-6">
-              {/* Tips Card */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
                 <Card className="border-primary/20 bg-primary/5">
                   <CardContent className="pt-6">
                     <div className="flex items-start gap-3">
@@ -146,10 +170,10 @@ if (!navigator.onLine && loading) {
                       <div className="space-y-1">
                         <h4 className="font-medium text-foreground">Tips for Effective Complaints</h4>
                         <ul className="text-sm text-muted-foreground space-y-1">
-                          <li>• Be specific about the issue and its location</li>
-                          <li>• Include relevant dates and times</li>
-                          <li>• Suggest a possible solution if you have one</li>
-                          <li>• Attach evidence or photos if available</li>
+                          <li>- Be specific about the issue and location</li>
+                          <li>- Include relevant dates and times</li>
+                          <li>- Suggest a possible solution if you have one</li>
+                          <li>- Attach evidence if available</li>
                         </ul>
                       </div>
                     </div>
@@ -157,7 +181,6 @@ if (!navigator.onLine && loading) {
                 </Card>
               </motion.div>
 
-              {/* Main Form */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -170,12 +193,11 @@ if (!navigator.onLine && loading) {
                       Complaint Details
                     </CardTitle>
                     <CardDescription>
-                      Provide as much detail as possible to help us address your concern
+                      Provide details to help us address your concern
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <form onSubmit={handleSubmit} className="space-y-6">
-                      {/* Title */}
                       <div className="space-y-2">
                         <Label htmlFor="title">
                           Complaint Title <span className="text-destructive">*</span>
@@ -184,9 +206,7 @@ if (!navigator.onLine && loading) {
                           id="title"
                           placeholder="Brief summary of your complaint"
                           value={formData.title}
-                          onChange={(e) =>
-                            setFormData({ ...formData, title: e.target.value })
-                          }
+                          onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                           maxLength={100}
                         />
                         <p className="text-xs text-muted-foreground text-right">
@@ -194,78 +214,15 @@ if (!navigator.onLine && loading) {
                         </p>
                       </div>
 
-                      {/* Category and Priority */}
-                      <div className="grid md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="category">
-                            Category <span className="text-destructive">*</span>
-                          </Label>
-                          <Select
-                            value={formData.category}
-                            onValueChange={(value) =>
-                              setFormData({ ...formData, category: value })
-                            }
-                          >
-                            <SelectTrigger id="category">
-                              <SelectValue placeholder="Select a category" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {categories.map((cat) => (
-                                <SelectItem key={cat} value={cat}>
-                                  {cat}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="priority">Priority Level</Label>
-                          <Select
-                            value={formData.priority}
-                            onValueChange={(value) =>
-                              setFormData({ ...formData, priority: value })
-                            }
-                          >
-                            <SelectTrigger id="priority">
-                              <SelectValue placeholder="Select priority" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="low">
-                                <span className="flex items-center gap-2">
-                                  <span className="h-2 w-2 rounded-full bg-success" />
-                                  Low
-                                </span>
-                              </SelectItem>
-                              <SelectItem value="medium">
-                                <span className="flex items-center gap-2">
-                                  <span className="h-2 w-2 rounded-full bg-pending" />
-                                  Medium
-                                </span>
-                              </SelectItem>
-                              <SelectItem value="high">
-                                <span className="flex items-center gap-2">
-                                  <span className="h-2 w-2 rounded-full bg-destructive" />
-                                  High
-                                </span>
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-
-                      {/* Description */}
                       <div className="space-y-2">
                         <Label htmlFor="description">
                           Description <span className="text-destructive">*</span>
                         </Label>
                         <Textarea
                           id="description"
-                          placeholder="Describe your complaint in detail. Include what happened, when it happened, where it happened, and who was involved if applicable."
+                          placeholder="Describe what happened, where, and when."
                           value={formData.description}
-                          onChange={(e) =>
-                            setFormData({ ...formData, description: e.target.value })
-                          }
+                          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                           rows={6}
                           maxLength={1000}
                         />
@@ -274,21 +231,36 @@ if (!navigator.onLine && loading) {
                         </p>
                       </div>
 
-                      {/* File Upload */}
                       <div className="space-y-2">
                         <Label>Attachments (Optional)</Label>
-                        <div className="border-2 border-dashed rounded-xl p-8 text-center hover:border-primary/50 transition-colors cursor-pointer bg-secondary/30">
+                        <label
+                          htmlFor="attachments"
+                          className="block border-2 border-dashed rounded-xl p-8 text-center hover:border-primary/50 transition-colors cursor-pointer bg-secondary/30"
+                        >
                           <Upload className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                          <p className="text-sm text-muted-foreground">
-                            Drag and drop files here, or click to browse
-                          </p>
+                          <p className="text-sm text-muted-foreground">Click to choose files</p>
                           <p className="text-xs text-muted-foreground mt-1">
-                            Supports images, PDFs up to 5MB
+                            Images and PDFs, up to 5 files
                           </p>
-                        </div>
+                        </label>
+                        <Input
+                          id="attachments"
+                          type="file"
+                          multiple
+                          accept="image/*,.pdf"
+                          className="hidden"
+                          onChange={(e) => {
+                            const files = Array.from(e.target.files ?? []).slice(0, 5);
+                            setSelectedFiles(files);
+                          }}
+                        />
+                        {selectedFiles.length > 0 && (
+                          <div className="text-sm text-muted-foreground">
+                            {selectedFiles.length} file(s) selected ({totalSelectedSizeMb.toFixed(2)} MB)
+                          </div>
+                        )}
                       </div>
 
-                      {/* Submit Button */}
                       <div className="flex gap-3 pt-4">
                         <Button
                           type="button"
@@ -302,9 +274,9 @@ if (!navigator.onLine && loading) {
                           type="submit"
                           variant="hero"
                           className="flex-1"
-                          disabled={createComplaint.isPending}
+                          disabled={createComplaint.isPending || isUploading}
                         >
-                          {createComplaint.isPending ? (
+                          {createComplaint.isPending || isUploading ? (
                             <>
                               <motion.div
                                 animate={{ rotate: 360 }}
@@ -312,7 +284,7 @@ if (!navigator.onLine && loading) {
                               >
                                 <CheckCircle2 className="h-4 w-4" />
                               </motion.div>
-                              Submitting...
+                              {isUploading ? "Uploading..." : "Submitting..."}
                             </>
                           ) : (
                             <>

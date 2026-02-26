@@ -1,0 +1,167 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: CampusVoice API - API Gateway + Lambda + RDS + S3
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 15
+    MemorySize: 512
+    CodeUri: .
+    Environment:
+      Variables:
+        RDS_CLUSTER_ARN: !Ref RdsClusterArn
+        RDS_SECRET_ARN: !Ref RdsSecretArn
+        RDS_DATABASE: !Ref RdsDatabaseName
+        ATTACHMENTS_BUCKET: !Ref AttachmentsBucket
+        CORS_ALLOW_ORIGIN: !Ref CorsAllowOrigin
+
+Parameters:
+  UserPoolId:
+    Type: String
+    Description: Cognito User Pool ID used by API JWT authorizer
+  UserPoolClientId:
+    Type: String
+    Description: Cognito User Pool App Client ID used by API JWT authorizer
+  RdsClusterArn:
+    Type: String
+    Description: ARN of Aurora cluster (Data API enabled)
+  RdsSecretArn:
+    Type: String
+    Description: ARN of Secrets Manager secret with DB credentials
+  RdsDatabaseName:
+    Type: String
+    Default: complaints
+  CorsAllowOrigin:
+    Type: String
+    Default: "*"
+  AttachmentsBucketName:
+    Type: String
+    Default: ""
+    Description: Leave empty to auto-generate
+
+Conditions:
+  UseCustomBucketName: !Not [!Equals [!Ref AttachmentsBucketName, ""]]
+
+Resources:
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins:
+          - !Ref CorsAllowOrigin
+        AllowHeaders:
+          - Authorization
+          - Content-Type
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+      Auth:
+        Authorizers:
+          CognitoJwtAuthorizer:
+            JwtConfiguration:
+              issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPoolId}
+              audience:
+                - !Ref UserPoolClientId
+            IdentitySource: "$request.header.Authorization"
+        DefaultAuthorizer: CognitoJwtAuthorizer
+
+  ComplaintsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: aws.handlers.list_complaints_handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - rds-data:ExecuteStatement
+              Resource: !Ref RdsClusterArn
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref RdsSecretArn
+      Events:
+        ListComplaints:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /complaints
+            Method: GET
+
+  CreateComplaintFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: aws.handlers.create_complaint_handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - rds-data:ExecuteStatement
+              Resource: !Ref RdsClusterArn
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref RdsSecretArn
+      Events:
+        CreateComplaint:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /complaints
+            Method: POST
+
+  UploadUrlFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: aws.handlers.create_presigned_upload_handler
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref AttachmentsBucket
+      Events:
+        CreateUploadUrl:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /uploads/presigned-url
+            Method: POST
+
+  HealthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: aws.handlers.health_handler
+      Events:
+        Health:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /health
+            Method: GET
+            Auth:
+              Authorizer: NONE
+
+  AttachmentsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !If [UseCustomBucketName, !Ref AttachmentsBucketName, !Ref "AWS::NoValue"]
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - "*"
+            AllowedMethods:
+              - PUT
+            AllowedOrigins:
+              - !Ref CorsAllowOrigin
+            MaxAge: 3000
+
+Outputs:
+  ApiUrl:
+    Description: API base URL
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+  AttachmentsBucketName:
+    Value: !Ref AttachmentsBucket

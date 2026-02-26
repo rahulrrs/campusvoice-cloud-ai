@@ -29,7 +29,6 @@ import {
 import { categories } from "@/data/mockComplaints";
 import { useAuth } from "@/contexts/AuthContext";
 import { useComplaints, type Complaint } from "@/hooks/useComplaints";
-import { useAutoSyncComplaints } from "@/hooks/useAutoSyncComplaints";
 
 type StatusFilter = "all" | "pending" | "in-progress" | "resolved" | "rejected" | "pending_sync";
 
@@ -41,15 +40,19 @@ const Dashboard = () => {
   const { user, loading: authLoading } = useAuth();
   const { data: complaints = [], isLoading } = useComplaints();
   const navigate = useNavigate();
+  const adminEmails = (import.meta.env.VITE_ADMIN_EMAILS ?? "")
+    .split(",")
+    .map((v: string) => v.trim().toLowerCase())
+    .filter((v: string) => v.length > 0);
+  const isAdmin = !!user?.email && adminEmails.includes(user.email.toLowerCase());
 
   // ✅ Auto-sync queued complaints when internet returns
-  useAutoSyncComplaints();
-
   // ✅ Online: enforce login. Offline: allow viewing (session may exist locally)
   useEffect(() => {
     if (!navigator.onLine) return;
     if (!authLoading && !user) navigate("/auth");
-  }, [user, authLoading, navigate]);
+    if (!authLoading && isAdmin) navigate("/admin");
+  }, [user, authLoading, isAdmin, navigate]);
 
   const isOffline = !navigator.onLine;
 
@@ -240,7 +243,7 @@ const Dashboard = () => {
                     id={complaint.id}
                     title={complaint.title}
                     description={complaint.description}
-                    category={complaint.category}
+                    category={complaint.category ?? "Uncategorized"}
                     status={
                       complaint.status as
                         | "pending"

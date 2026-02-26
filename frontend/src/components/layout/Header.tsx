@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Menu, X, MessageSquare, Plus, LayoutDashboard, LogOut } from "lucide-react";
+import { Menu, X, MessageSquare, Plus, LayoutDashboard, LogOut, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -12,12 +12,22 @@ const Header = () => {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const { toast } = useToast();
+  const adminEmails = (import.meta.env.VITE_ADMIN_EMAILS ?? "")
+    .split(",")
+    .map((v: string) => v.trim().toLowerCase())
+    .filter((v: string) => v.length > 0);
+  const isAdmin = !!user?.email && adminEmails.includes(user.email.toLowerCase());
 
-  const navItems = [
-    { path: "/", label: "Home", icon: null },
-    { path: "/dashboard", label: "My Complaints", icon: LayoutDashboard },
-    { path: "/submit", label: "Submit Complaint", icon: Plus },
-  ];
+  const navItems = isAdmin
+    ? [
+        { path: "/", label: "Home", icon: null },
+        { path: "/admin", label: "Admin", icon: ShieldCheck },
+      ]
+    : [
+        { path: "/", label: "Home", icon: null },
+        { path: "/dashboard", label: "My Complaints", icon: LayoutDashboard },
+        { path: "/submit", label: "Submit Complaint", icon: Plus },
+      ];
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -82,6 +92,11 @@ const Header = () => {
                   Sign In
                 </Button>
               </Link>
+              <Link to="/admin-login">
+                <Button variant="outline" size="sm">
+                  Admin Login
+                </Button>
+              </Link>
               <Link to="/auth">
                 <Button variant="hero" size="sm">
                   Get Started
@@ -138,6 +153,11 @@ const Header = () => {
                   <Link to="/auth" onClick={() => setIsMenuOpen(false)}>
                     <Button variant="outline" className="w-full">
                       Sign In
+                    </Button>
+                  </Link>
+                  <Link to="/admin-login" onClick={() => setIsMenuOpen(false)}>
+                    <Button variant="outline" className="w-full">
+                      Admin Login
                     </Button>
                   </Link>
                   <Link to="/auth" onClick={() => setIsMenuOpen(false)}>

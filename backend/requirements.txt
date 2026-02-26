@@ -7,3 +7,10 @@ accelerate
 torch
 torchvision
 torchaudio
+fastapi
+uvicorn[standard]
+boto3
+psycopg2-binary
+PyJWT
+python-dotenv
+safetensors

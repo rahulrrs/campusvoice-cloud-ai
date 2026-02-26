@@ -1,7 +1,9 @@
 import { Amplify } from "aws-amplify";
 import {
+  confirmSignUp as cognitoConfirmSignUp,
   fetchAuthSession,
   getCurrentUser,
+  resendSignUpCode as cognitoResendSignUpCode,
   signIn as cognitoSignIn,
   signOut as cognitoSignOut,
   signUp as cognitoSignUp,
@@ -46,9 +48,18 @@ const normalizeError = (error: unknown) => {
   return new Error("Unknown authentication error");
 };
 
+const buildCognitoUsername = (email: string) => {
+  const normalized = email.trim().toLowerCase();
+  return `u_${normalized.replace(/[^a-z0-9]/g, "_")}`;
+};
+
 const getToken = async () => {
   const session = await fetchAuthSession();
-  return session.tokens?.accessToken?.toString() ?? null;
+  return (
+    session.tokens?.idToken?.toString() ??
+    session.tokens?.accessToken?.toString() ??
+    null
+  );
 };
 
 const getAuthUser = async (): Promise<AuthUser | null> => {
@@ -90,8 +101,9 @@ export const awsAuth = {
 
   async signUp(email: string, password: string, fullName: string) {
     try {
+      const generatedUsername = buildCognitoUsername(email);
       await cognitoSignUp({
-        username: email,
+        username: generatedUsername,
         password,
         options: {
           userAttributes: {
@@ -111,6 +123,29 @@ export const awsAuth = {
       await cognitoSignIn({
         username: email,
         password,
+      });
+      return { error: null as Error | null };
+    } catch (error) {
+      return { error: normalizeError(error) };
+    }
+  },
+
+  async confirmSignUp(email: string, code: string) {
+    try {
+      await cognitoConfirmSignUp({
+        username: buildCognitoUsername(email),
+        confirmationCode: code,
+      });
+      return { error: null as Error | null };
+    } catch (error) {
+      return { error: normalizeError(error) };
+    }
+  },
+
+  async resendSignUpCode(email: string) {
+    try {
+      await cognitoResendSignUpCode({
+        username: buildCognitoUsername(email),
       });
       return { error: null as Error | null };
     } catch (error) {
@@ -148,6 +183,8 @@ const authFetch = async <T>(path: string, init?: RequestInit): Promise<T> => {
       const body = await response.json();
       if (typeof body?.message === "string") {
         message = body.message;
+      } else if (typeof body?.detail === "string") {
+        message = body.detail;
       }
     } catch {
       // Ignore JSON parse failures and keep status message.
@@ -169,7 +206,9 @@ export interface ComplaintRecord {
   description: string;
   category: string;
   priority: string;
+  department?: string | null;
   status: string;
+  attachments?: string[];
   created_at: string;
   updated_at?: string;
 }
@@ -177,10 +216,37 @@ export interface ComplaintRecord {
 export interface CreateComplaintPayload {
   title: string;
   description: string;
-  category: string;
-  priority: string;
+  category?: string;
+  priority?: string;
+  attachments?: string[];
   user_id?: string;
   status?: string;
+}
+
+export interface PresignedUploadRequest {
+  fileName: string;
+  contentType: string;
+}
+
+export interface PresignedUploadResponse {
+  uploadUrl: string;
+  key: string;
+  expiresIn: number;
+}
+
+export interface AdminComplaintUpdatePayload {
+  category?: string;
+  priority?: string;
+  department?: string;
+  status?: string;
+}
+
+export interface PredictionResult {
+  label: string;
+  label_confidence: number;
+  priority: string;
+  priority_confidence: number;
+  department: string;
 }
 
 export const complaintsApi = {
@@ -190,4 +256,50 @@ export const complaintsApi = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  createUploadUrl: (payload: PresignedUploadRequest) =>
+    authFetch<PresignedUploadResponse>("/uploads/presigned-url", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  uploadToS3: async (uploadUrl: string, file: Blob, contentType: string) => {
+    const response = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: {
+        "Content-Type": contentType,
+      },
+      body: file,
+    });
+    if (!response.ok) {
+      throw new Error(`Attachment upload failed with ${response.status}`);
+    }
+  },
+  listAllForAdmin: () => authFetch<ComplaintRecord[]>("/admin/complaints"),
+  predictForComplaint: (complaintId: string) =>
+    authFetch<PredictionResult>(`/admin/complaints/${complaintId}/predict`, {
+      method: "POST",
+    }),
+  autoApplyPrediction: (complaintId: string) =>
+    authFetch<{ prediction: PredictionResult; complaint: ComplaintRecord }>(
+      `/admin/complaints/${complaintId}/auto-apply`,
+      {
+        method: "POST",
+      }
+    ),
+  updateComplaintByAdmin: (complaintId: string, payload: AdminComplaintUpdatePayload) =>
+    authFetch<ComplaintRecord>(`/admin/complaints/${complaintId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  approveComplaint: (complaintId: string) =>
+    authFetch<ComplaintRecord>(`/admin/complaints/${complaintId}/approve`, {
+      method: "POST",
+    }),
+  autoClassifyAll: (onlyPending = true) =>
+    authFetch<{ updatedCount: number; items: Array<{ prediction: PredictionResult; complaint: ComplaintRecord }> }>(
+      "/admin/complaints/auto-classify",
+      {
+        method: "POST",
+        body: JSON.stringify({ only_pending: onlyPending }),
+      }
+    ),
 };

@@ -1,10 +1,27 @@
 import { openDB } from "idb";
 
+export type QueuedAttachment = {
+  name: string;
+  type: string;
+  size: number;
+  file: Blob;
+};
+
+export type PendingComplaintData = {
+  title: string;
+  description: string;
+  user_id: string;
+  category?: string;
+  priority?: string;
+  attachment_keys?: string[];
+  queued_attachments?: QueuedAttachment[];
+};
+
 export type PendingComplaint = {
   localId: string;
   createdAt: number;
   status: "PENDING" | "SYNCED" | "FAILED";
-  data: any;
+  data: PendingComplaintData;
 };
 
 export const dbPromise = openDB("campusvoice", 1, {
@@ -18,12 +35,9 @@ export const dbPromise = openDB("campusvoice", 1, {
   },
 });
 
-export async function savePendingComplaint(data: any) {
+export async function savePendingComplaint(data: PendingComplaintData) {
   const db = await dbPromise;
-
-  // ✅ safe ID generator (works everywhere)
-  const localId =
-    (globalThis.crypto as any)?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+  const localId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 
   await db.put("pendingComplaints", {
     localId,

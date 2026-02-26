@@ -6,6 +6,7 @@ import {
   getPendingComplaints,
   deletePendingComplaint,
   type PendingComplaint,
+  type QueuedAttachment,
 } from "@/offline/db";
 
 export interface Complaint {
@@ -13,9 +14,10 @@ export interface Complaint {
   user_id: string;
   title: string;
   description: string;
-  category: string;
-  priority: string;
+  category?: string;
+  priority?: string;
   status: string;
+  attachments?: string[];
   created_at: string;
   updated_at?: string;
 }
@@ -23,8 +25,9 @@ export interface Complaint {
 export interface CreateComplaintData {
   title: string;
   description: string;
-  category: string;
-  priority: string;
+  attachment_keys?: string[];
+  queued_attachments?: QueuedAttachment[];
+  already_queued?: boolean;
 }
 
 export const useComplaints = () => {
@@ -43,8 +46,8 @@ export const useComplaints = () => {
             user_id: p.data.user_id,
             title: p.data.title,
             description: p.data.description,
-            category: p.data.category,
-            priority: p.data.priority,
+            category: p.data.category ?? "Uncategorized",
+            priority: p.data.priority ?? "medium",
             status: "pending_sync",
             created_at: new Date(p.createdAt).toISOString(),
           } as Complaint;
@@ -52,11 +55,16 @@ export const useComplaints = () => {
 
       if (!navigator.onLine) return pending;
 
-      const data = await complaintsApi.list();
-      const serverComplaints = [...(data as Complaint[])].sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-      return [...pending, ...serverComplaints];
+      try {
+        const data = await complaintsApi.list();
+        const serverComplaints = [...(data as Complaint[])].sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        return [...pending, ...serverComplaints];
+      } catch {
+        // Keep local visibility if API list is temporarily unavailable.
+        return pending;
+      }
     },
     enabled: !!user,
   });
@@ -71,15 +79,20 @@ export const useCreateComplaint = () => {
       if (!user) throw new Error("User not authenticated");
 
       if (!navigator.onLine) {
-        await savePendingComplaint({
-          ...data,
-          user_id: user.id,
-        });
+        if (!data.already_queued) {
+          await savePendingComplaint({
+            ...data,
+            user_id: user.id,
+          });
+        }
         return { ok: true };
       }
 
       return await complaintsApi.create({
         ...data,
+        category: "Uncategorized",
+        priority: "medium",
+        attachments: data.attachment_keys ?? [],
         user_id: user.id,
         status: "pending",
       });
@@ -101,16 +114,37 @@ export async function syncOfflineComplaints(userId: string) {
   const mine = pending.filter((p) => p?.data?.user_id === userId);
 
   for (const p of mine) {
-    const payload = {
-      ...p.data,
-      user_id: userId,
-      status: "pending",
-    };
-
     try {
+      const attachmentKeys = Array.isArray(p.data.attachment_keys) ? [...p.data.attachment_keys] : [];
+      const queued = Array.isArray(p.data.queued_attachments) ? p.data.queued_attachments : [];
+
+      if (queued.length > 0) {
+        for (const item of queued) {
+          const contentType = item.type || "application/octet-stream";
+          const uploadMeta = await complaintsApi.createUploadUrl({
+            fileName: item.name,
+            contentType,
+          });
+          const fileBlob =
+            item.file instanceof Blob ? item.file : new Blob([item.file], { type: contentType });
+          await complaintsApi.uploadToS3(uploadMeta.uploadUrl, fileBlob, contentType);
+          attachmentKeys.push(uploadMeta.key);
+        }
+      }
+
+      const payload = {
+        ...p.data,
+        category: p.data.category ?? "Uncategorized",
+        priority: p.data.priority ?? "medium",
+        attachments: attachmentKeys,
+        user_id: userId,
+        status: "pending",
+      };
+
       await complaintsApi.create(payload);
       await deletePendingComplaint(p.localId);
-    } catch {
+    } catch (error) {
+      console.error("Failed to sync pending complaint", p.localId, error);
       // Keep for retry.
     }
   }

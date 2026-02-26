@@ -7,6 +7,8 @@ interface AuthContextType {
   loading: boolean;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+  confirmSignUp: (email: string, code: string) => Promise<{ error: Error | null }>;
+  resendSignUpCode: (email: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -81,8 +83,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setUser(null);
   };
 
+  const confirmSignUp = async (email: string, code: string) => {
+    return awsAuth.confirmSignUp(email, code);
+  };
+
+  const resendSignUpCode = async (email: string) => {
+    return awsAuth.resendSignUpCode(email);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, session, loading, signUp, signIn, signOut }}>
+    <AuthContext.Provider
+      value={{ user, session, loading, signUp, signIn, confirmSignUp, resendSignUpCode, signOut }}
+    >
       {children}
     </AuthContext.Provider>
   );
