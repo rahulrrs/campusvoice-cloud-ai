@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Calendar, Tag, ChevronRight } from "lucide-react";
+import { Calendar, Tag, ChevronRight, Building2, Clock3 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import StatusBadge from "./StatusBadge";
 
@@ -15,8 +15,10 @@ interface ComplaintCardProps {
   title: string;
   description: string;
   category: string;
+  department?: string;
   status: ComplaintStatus;
   date: string;
+  lastUpdated?: string;
   onClick?: () => void;
 }
 
@@ -25,8 +27,10 @@ const ComplaintCard = ({
   title,
   description,
   category,
+  department,
   status,
   date,
+  lastUpdated,
   onClick,
 }: ComplaintCardProps) => {
   // Optional: make the displayed id nicer for offline items (local-xxxx)
@@ -83,6 +87,19 @@ const ComplaintCard = ({
             </span>
 
             <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
+          </div>
+
+          <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+            <div className="flex items-center gap-1.5">
+              <Building2 className="h-3 w-3" />
+              Assigned: {department?.trim() ? department : "Not assigned"}
+            </div>
+            {lastUpdated && (
+              <div className="flex items-center gap-1.5">
+                <Clock3 className="h-3 w-3" />
+                Last updated: {lastUpdated}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

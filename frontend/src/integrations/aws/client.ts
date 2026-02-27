@@ -239,6 +239,7 @@ export interface AdminComplaintUpdatePayload {
   priority?: string;
   department?: string;
   status?: string;
+  status_reason?: string;
 }
 
 export interface PredictionResult {

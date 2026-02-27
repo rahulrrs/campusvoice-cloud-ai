@@ -244,6 +244,7 @@ const Dashboard = () => {
                     title={complaint.title}
                     description={complaint.description}
                     category={complaint.category ?? "Uncategorized"}
+                    department={complaint.department ?? undefined}
                     status={
                       complaint.status as
                         | "pending"
@@ -253,6 +254,7 @@ const Dashboard = () => {
                         | "pending_sync"
                     }
                     date={new Date(complaint.created_at).toLocaleDateString()}
+                    lastUpdated={new Date(complaint.updated_at ?? complaint.created_at).toLocaleString()}
                   />
                 </motion.div>
               ))}

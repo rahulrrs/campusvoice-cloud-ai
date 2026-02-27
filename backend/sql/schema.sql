@@ -12,8 +12,21 @@ CREATE TABLE IF NOT EXISTS complaints (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS complaint_status_audit (
+  id UUID PRIMARY KEY,
+  complaint_id UUID NOT NULL REFERENCES complaints(id) ON DELETE CASCADE,
+  old_status VARCHAR(30),
+  new_status VARCHAR(30) NOT NULL,
+  reason TEXT,
+  changed_by TEXT NOT NULL,
+  changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_complaints_user_created_at
   ON complaints (user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_status_audit_complaint_changed_at
+  ON complaint_status_audit (complaint_id, changed_at DESC);
 
 CREATE OR REPLACE FUNCTION touch_updated_at() RETURNS trigger AS $$
 BEGIN

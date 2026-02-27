@@ -4,10 +4,6 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Environment files
-**/.env
-**/.env.*
-!**/.env.example
 
 # Python
 **/__pycache__/

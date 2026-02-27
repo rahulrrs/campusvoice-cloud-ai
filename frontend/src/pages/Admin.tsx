@@ -32,6 +32,8 @@ const Admin = () => {
   const [manualDrafts, setManualDrafts] = useState<
     Record<string, { category: string; priority: string; department: string }>
   >({});
+  const [statusDrafts, setStatusDrafts] = useState<Record<string, string>>({});
+  const [statusReasons, setStatusReasons] = useState<Record<string, string>>({});
 
   const isAdmin = useMemo(() => {
     if (!user?.email) return false;
@@ -64,6 +66,16 @@ const Admin = () => {
             priority: complaint.priority ?? "medium",
             department: complaint.department ?? "",
           };
+        }
+      }
+      return next;
+    });
+
+    setStatusDrafts((prev) => {
+      const next = { ...prev };
+      for (const complaint of complaints) {
+        if (!next[complaint.id]) {
+          next[complaint.id] = complaint.status;
         }
       }
       return next;
@@ -122,8 +134,19 @@ const Admin = () => {
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ complaintId, status }: { complaintId: string; status: string }) =>
-      complaintsApi.updateComplaintByAdmin(complaintId, { status }),
+    mutationFn: async ({
+      complaintId,
+      status,
+      statusReason,
+    }: {
+      complaintId: string;
+      status: string;
+      statusReason?: string;
+    }) =>
+      complaintsApi.updateComplaintByAdmin(complaintId, {
+        status,
+        status_reason: statusReason,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-complaints"] });
     },
@@ -186,6 +209,26 @@ const Admin = () => {
       });
     },
   });
+
+  const applyStatusChange = (complaint: ComplaintRecord) => {
+    const nextStatus = statusDrafts[complaint.id] ?? complaint.status;
+    const reason = (statusReasons[complaint.id] ?? "").trim();
+
+    if ((nextStatus === "resolved" || nextStatus === "rejected") && !reason) {
+      toast({
+        title: "Reason required",
+        description: `Please provide a reason for ${nextStatus}.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    updateStatusMutation.mutate({
+      complaintId: complaint.id,
+      status: nextStatus,
+      statusReason: reason || undefined,
+    });
+  };
 
   if (loading || complaintsQuery.isLoading) {
     return (
@@ -328,9 +371,9 @@ const Admin = () => {
                     Approve Complaint
                   </Button>
                   <Select
-                    value={complaint.status}
+                    value={statusDrafts[complaint.id] ?? complaint.status}
                     onValueChange={(status) =>
-                      updateStatusMutation.mutate({ complaintId: complaint.id, status })
+                      setStatusDrafts((prev) => ({ ...prev, [complaint.id]: status }))
                     }
                   >
                     <SelectTrigger className="w-[180px]">
@@ -343,6 +386,28 @@ const Admin = () => {
                       <SelectItem value="rejected">rejected</SelectItem>
                     </SelectContent>
                   </Select>
+                  {(statusDrafts[complaint.id] === "resolved" ||
+                    statusDrafts[complaint.id] === "rejected") && (
+                    <input
+                      className="h-10 rounded-md border bg-background px-3 text-sm md:min-w-[280px]"
+                      placeholder="Reason (required for resolved/rejected)"
+                      value={statusReasons[complaint.id] ?? ""}
+                      onChange={(event) =>
+                        setStatusReasons((prev) => ({
+                          ...prev,
+                          [complaint.id]: event.target.value,
+                        }))
+                      }
+                    />
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={updateStatusMutation.isPending}
+                    onClick={() => applyStatusChange(complaint)}
+                  >
+                    Apply Status
+                  </Button>
                 </div>
 
                 <div className="rounded-md border p-3 space-y-2">

@@ -16,6 +16,7 @@ export interface Complaint {
   description: string;
   category?: string;
   priority?: string;
+  department?: string;
   status: string;
   attachments?: string[];
   created_at: string;

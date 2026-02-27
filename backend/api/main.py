@@ -289,6 +289,7 @@ class ComplaintAdminUpdate(BaseModel):
     priority: str | None = None
     department: str | None = None
     status: str | None = None
+    status_reason: str | None = None
 
 
 class AutoClassifyRequest(BaseModel):
@@ -408,7 +409,53 @@ def _ensure_schema() -> None:
                 ADD COLUMN IF NOT EXISTS department VARCHAR(120)
                 """
             )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS complaint_status_audit (
+                  id UUID PRIMARY KEY,
+                  complaint_id UUID NOT NULL REFERENCES complaints(id) ON DELETE CASCADE,
+                  old_status VARCHAR(30),
+                  new_status VARCHAR(30) NOT NULL,
+                  reason TEXT,
+                  changed_by TEXT NOT NULL,
+                  changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_status_audit_complaint_changed_at
+                ON complaint_status_audit (complaint_id, changed_at DESC)
+                """
+            )
         conn.commit()
+
+
+def _insert_status_audit(
+    cur: RealDictCursor,
+    complaint_id: str,
+    old_status: str | None,
+    new_status: str,
+    reason: str | None,
+    changed_by: str,
+) -> None:
+    cur.execute(
+        """
+        INSERT INTO complaint_status_audit (
+          id, complaint_id, old_status, new_status, reason, changed_by
+        ) VALUES (
+          %s::uuid, %s::uuid, %s, %s, %s, %s
+        )
+        """,
+        (
+            str(uuid.uuid4()),
+            complaint_id,
+            old_status,
+            new_status,
+            reason,
+            changed_by,
+        ),
+    )
 
 
 def predict_one(text: str):
@@ -528,9 +575,22 @@ def approve_complaint(
     complaint_id: str,
     admin_user: CurrentUser = Depends(require_admin),
 ):
-    del admin_user
+    changed_by = admin_user.email or admin_user.user_id
     with get_db_conn() as conn:
         with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT status
+                FROM complaints
+                WHERE id = %s::uuid
+                """,
+                (complaint_id,),
+            )
+            existing = cur.fetchone()
+            if not existing:
+                raise HTTPException(status_code=404, detail="Complaint not found")
+            old_status = existing["status"]
+
             cur.execute(
                 """
                 UPDATE complaints
@@ -541,10 +601,17 @@ def approve_complaint(
                 (complaint_id,),
             )
             row = cur.fetchone()
+            if old_status != "in-progress":
+                _insert_status_audit(
+                    cur,
+                    complaint_id=complaint_id,
+                    old_status=old_status,
+                    new_status="in-progress",
+                    reason="Approved by admin",
+                    changed_by=changed_by,
+                )
         conn.commit()
 
-    if not row:
-        raise HTTPException(status_code=404, detail="Complaint not found")
     return _serialize_row(row)
 
 
@@ -668,11 +735,12 @@ def update_complaint_by_admin(
     payload: ComplaintAdminUpdate,
     admin_user: CurrentUser = Depends(require_admin),
 ):
-    del admin_user
+    changed_by = admin_user.email or admin_user.user_id
 
     fields: list[str] = []
     values: list[Any] = []
     idx = 1
+    target_status: str | None = None
 
     if payload.category is not None:
         fields.append(f"category = %s")
@@ -693,8 +761,14 @@ def update_complaint_by_admin(
         status_value = payload.status.strip().lower()
         if status_value not in {"pending", "in-progress", "resolved", "rejected"}:
             raise HTTPException(status_code=400, detail="invalid status")
+        if status_value in {"resolved", "rejected"} and not (payload.status_reason or "").strip():
+            raise HTTPException(
+                status_code=400,
+                detail="status_reason is required when status is resolved or rejected",
+            )
         fields.append("status = %s")
         values.append(status_value)
+        target_status = status_value
         idx += 1
 
     if not fields:
@@ -704,6 +778,21 @@ def update_complaint_by_admin(
 
     with get_db_conn() as conn:
         with conn.cursor() as cur:
+            old_status: str | None = None
+            if target_status is not None:
+                cur.execute(
+                    """
+                    SELECT status
+                    FROM complaints
+                    WHERE id = %s::uuid
+                    """,
+                    (complaint_id,),
+                )
+                existing = cur.fetchone()
+                if not existing:
+                    raise HTTPException(status_code=404, detail="Complaint not found")
+                old_status = existing["status"]
+
             cur.execute(
                 f"""
                 UPDATE complaints
@@ -714,6 +803,16 @@ def update_complaint_by_admin(
                 tuple(values),
             )
             row = cur.fetchone()
+
+            if target_status is not None and old_status != target_status:
+                _insert_status_audit(
+                    cur,
+                    complaint_id=complaint_id,
+                    old_status=old_status,
+                    new_status=target_status,
+                    reason=(payload.status_reason or "").strip() or None,
+                    changed_by=changed_by,
+                )
         conn.commit()
 
     if not row:
