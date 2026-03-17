@@ -1,0 +1,51 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+
+# Python
+**/__pycache__/
+**/*.py[cod]
+**/*.pyo
+**/*.pyd
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.coverage
+**/htmlcov/
+**/.venv/
+**/venv/
+**/env/
+
+# Node / frontend
+**/node_modules/
+**/dist/
+**/.vite/
+**/coverage/
+
+# Logs
+**/*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build / temp
+**/build/
+**/.cache/
+**/tmp/
+**/temp/
+
+# Aws Key
+*.pem
+
+# Local env files
+backend/.env
+frontend/.env
+
+# Trained model artifacts
+backend/outputs/
+
+# Large local datasets
+backend/data/complaints.csv

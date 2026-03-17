@@ -1,0 +1,15 @@
+pandas
+numpy
+scikit-learn
+datasets
+transformers
+accelerate
+google-genai
+fastapi
+uvicorn[standard]
+boto3
+psycopg2-binary
+PyJWT
+python-dotenv
+safetensors
+tensorboard

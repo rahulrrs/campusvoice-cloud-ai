@@ -1,0 +1,37 @@
+text,label_id,priority_id_fixed,source,created_at
+"Hostel Ragging
+
+Ragging Complaint Report
+
+Institution Name: XYZ Institute of Technology
+Department: Computer Science and Engineering
+Date of Complaint: 10 March 2026
+Place of Incident: Boys Hostel – Block B
+
+1. Complainant Details
+
+Name: Rahul Kumar
+Roll Number: CSE2025A034
+Year/Semester: 1st Year / 2nd Semester
+Contact Number: 9876543210
+Email: rahul.kumar@example.com
+
+2. Accused Student Details
+
+Name: Arjun Sharma
+Roll Number: ME2023B012
+Department: Mechanical Engineering
+Year: 3rd Year
+Hostel Room Number: B-214
+
+3. Incident Details
+
+Date of Incident: 8 March 2026
+Time: Around 9:30 PM
+
+Description of the Incident
+
+On the evening of 8 March 2026, while returning to my hostel room, I was stopped by a group of senior students in the corridor of Block B. One of them, identified as Arjun Sharma, asked me several personal questions and forced me to perform activities such as singing and doing push-ups. When I hesitated, they used threatening language and warned me not to inform anyone about the incident.",18,2,frontend_submit,2026-03-13T09:05:12.266189+00:00
+"water logging
+
+the hotels sink is being logged with drainage water",9,1,frontend_submit,2026-03-15T18:13:54.241554+00:00
