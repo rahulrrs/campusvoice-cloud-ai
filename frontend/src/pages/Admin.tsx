@@ -43,6 +43,15 @@ const normalizeStatus = (status?: string | null) => {
   return status === "in_progress" ? "in-progress" : status;
 };
 
+const hasEscalationLevel = (value?: string | null) => {
+  if (!value) return false;
+  const parsed = Number(value);
+  if (Number.isFinite(parsed)) {
+    return parsed > 0;
+  }
+  return value.trim().length > 0;
+};
+
 const ADMIN_REPLY_TEMPLATES = [
   {
     label: "Ask for Details",
@@ -401,7 +410,7 @@ const Admin = () => {
       (!complaint.category || complaint.category === "Uncategorized" || complaint.category === "Unknown")
   ).length;
   const escalatedCount = complaints.filter(
-    (complaint) => (complaint.escalation_level && complaint.escalation_level > 0) || complaint.decision_state === "escalated"
+    (complaint) => hasEscalationLevel(complaint.escalation_level) || complaint.decision_state === "escalated"
   ).length;
   const analytics = analyticsQuery.data;
 
