@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ShieldCheck, Mail, Lock, AlertCircle, Eye, EyeOff } from "lucide-react";
@@ -9,15 +9,10 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { complaintsApi } from "@/integrations/aws/client";
 
 const emailSchema = z.string().email("Please enter a valid admin email address");
 const passwordSchema = z.string().min(6, "Password must be at least 6 characters");
-
-const getAdminEmails = () =>
-  (import.meta.env.VITE_ADMIN_EMAILS ?? "")
-    .split(",")
-    .map((v: string) => v.trim().toLowerCase())
-    .filter((v: string) => v.length > 0);
 
 const AdminLogin = () => {
   const [email, setEmail] = useState("");
@@ -29,15 +24,17 @@ const AdminLogin = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const adminEmails = useMemo(() => getAdminEmails(), []);
-  const isCurrentUserAdmin =
-    !!user?.email && adminEmails.includes(user.email.toLowerCase());
-
   useEffect(() => {
-    if (!loading && isCurrentUserAdmin) {
-      navigate("/admin");
+    if (!loading && user) {
+      void complaintsApi.getAccessProfile()
+        .then((profile) => {
+          if (profile.is_super_admin) navigate("/super-admin");
+          else if (profile.is_admin) navigate("/admin");
+          else if (profile.pending_invites.length > 0) navigate("/admin-access");
+        })
+        .catch(() => undefined);
     }
-  }, [isCurrentUserAdmin, loading, navigate]);
+  }, [loading, navigate, user]);
 
   const validateForm = () => {
     const newErrors: { email?: string; password?: string } = {};
@@ -45,8 +42,6 @@ const AdminLogin = () => {
     const emailResult = emailSchema.safeParse(email);
     if (!emailResult.success) {
       newErrors.email = emailResult.error.errors[0].message;
-    } else if (!adminEmails.includes(email.trim().toLowerCase())) {
-      newErrors.email = "This email is not configured as an admin.";
     }
 
     const passwordResult = passwordSchema.safeParse(password);
@@ -76,9 +71,22 @@ const AdminLogin = () => {
 
       toast({
         title: "Admin logged in",
-        description: "Redirecting to admin dashboard.",
+        description: "Checking your admin access.",
       });
-      navigate("/admin");
+      const profile = await complaintsApi.getAccessProfile();
+      if (profile.is_super_admin) {
+        navigate("/super-admin");
+      } else if (profile.is_admin) {
+        navigate("/admin");
+      } else if (profile.pending_invites.length > 0) {
+        navigate("/admin-access");
+      } else {
+        toast({
+          title: "No admin access yet",
+          description: "This account is signed in, but it has not been granted admin access.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsSubmitting(false);
     }

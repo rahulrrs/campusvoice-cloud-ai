@@ -5,6 +5,7 @@ import re
 import subprocess
 import sys
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
 import torch
@@ -13,11 +14,12 @@ from safetensors.torch import load_file
 from transformers import AutoModel, AutoTokenizer
 
 # ========= CONFIG =========
-MODEL_DIR = r"outputs\edu_classifier_multitask"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+MODEL_DIR = PROJECT_ROOT / "outputs" / "edu_classifier_multitask"
 MAX_LENGTH = 256
 
-BACKBONE_DIR = r"outputs\general_complaint_model"
-LEGACY_BACKBONE_DIR = r"outputs\distilbert_cfpb_mlm"
+BACKBONE_DIR = PROJECT_ROOT / "outputs" / "general_complaint_model"
+LEGACY_BACKBONE_DIR = PROJECT_ROOT / "outputs" / "distilbert_cfpb_mlm"
 FALLBACK_BACKBONE = "distilbert-base-uncased"
 
 LABEL_THRESHOLD = 0.60
@@ -28,10 +30,10 @@ ENFORCE_UNKNOWN_PRIORITY_IF_UNKNOWN_LABEL = False
 AUTO_FEEDBACK_ENABLED = True
 AUTO_FEEDBACK_LABEL_CONF_THRESHOLD = 0.90
 AUTO_FEEDBACK_PRIO_CONF_THRESHOLD = 0.90
-PSEUDO_FEEDBACK_PATH = r"data\pseudo_feedback.csv"
+PSEUDO_FEEDBACK_PATH = PROJECT_ROOT / "data" / "pseudo_feedback.csv"
 AUTO_RETRAIN_ENABLED = True
 AUTO_RETRAIN_MIN_NEW_SAMPLES = 200
-AUTO_RETRAIN_STATE_PATH = r"outputs\edu_classifier_multitask\auto_retrain_state.json"
+AUTO_RETRAIN_STATE_PATH = MODEL_DIR / "auto_retrain_state.json"
 
 # Feature flags
 ENABLE_EXAM_URGENCY_OVERRIDE = True
@@ -51,8 +53,8 @@ HOSTEL_WATER_OVERRIDE_LABEL_NAME = "Hostel"
 IT_OVERRIDE_LABEL_NAME = "IT & Digital Services"
 SAFETY_OVERRIDE_LABEL_NAME = "Ragging / Harassment"
 LOST_FOUND_OVERRIDE_LABEL_NAME = "Lost & Found"
-SCHOLARSHIP_OVERRIDE_LABEL_NAME = "Scholarship"
-TRANSPORT_OVERRIDE_LABEL_NAME = "Transport"
+SCHOLARSHIP_OVERRIDE_LABEL_NAME = "Fees"
+TRANSPORT_OVERRIDE_LABEL_NAME = "Transportation"
 # ==========================
 
 

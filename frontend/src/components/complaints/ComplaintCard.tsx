@@ -1,10 +1,11 @@
-import { motion } from "framer-motion";
-import { Calendar, Tag, ChevronRight } from "lucide-react";
+import { Calendar, ChevronRight, Tag } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import StatusBadge from "./StatusBadge";
 
 export type ComplaintStatus =
+  | "submitted"
   | "pending"
+  | "in_progress"
   | "in-progress"
   | "resolved"
   | "rejected"
@@ -17,6 +18,7 @@ interface ComplaintCardProps {
   category: string;
   status: ComplaintStatus;
   date: string;
+  hasUnreadUpdates?: boolean;
   onClick?: () => void;
 }
 
@@ -27,66 +29,63 @@ const ComplaintCard = ({
   category,
   status,
   date,
+  hasUnreadUpdates = false,
   onClick,
 }: ComplaintCardProps) => {
-  // Optional: make the displayed id nicer for offline items (local-xxxx)
   const displayId = id.startsWith("local-") ? id.replace("local-", "OFF-") : id;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      whileHover={{ y: -2 }}
-      transition={{ duration: 0.2 }}
+    <Card
+      role="button"
+      tabIndex={0}
+      className="group cursor-pointer border bg-card shadow-card transition-colors duration-200 hover:border-primary/25 hover:shadow-card"
+      onClick={onClick}
+      onKeyDown={(event) => {
+        if (!onClick) return;
+        if (event.key === "Enter" || event.key === " ") onClick();
+      }}
     >
-      <Card
-        role="button"
-        tabIndex={0}
-        className="group cursor-pointer border shadow-card hover:shadow-elevated transition-all duration-300 bg-card"
-        onClick={onClick}
-        onKeyDown={(e) => {
-          if (!onClick) return;
-          if (e.key === "Enter" || e.key === " ") onClick();
-        }}
-      >
-        <CardHeader className="pb-3">
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1 flex-1">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="font-mono">#{displayId}</span>
-                <span>•</span>
-                <span className="flex items-center gap-1">
-                  <Calendar className="h-3 w-3" />
-                  {date}
-                </span>
-              </div>
-
-              <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors line-clamp-1">
-                {title}
-              </h3>
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1 space-y-1">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="font-mono">#{displayId}</span>
+              <span>&bull;</span>
+              <span className="flex items-center gap-1">
+                <Calendar className="h-3 w-3" />
+                {date}
+              </span>
             </div>
 
-            {/* ✅ Now supports pending_sync */}
-            <StatusBadge status={status} />
+            <h3 className="line-clamp-1 font-semibold text-foreground transition-colors group-hover:text-primary">
+              {title}
+            </h3>
           </div>
-        </CardHeader>
 
-        <CardContent className="pt-0">
-          <p className="text-sm text-muted-foreground line-clamp-2 mb-4">
-            {description}
-          </p>
+          <StatusBadge status={status} />
+        </div>
+      </CardHeader>
 
-          <div className="flex items-center justify-between">
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground bg-secondary px-2.5 py-1 rounded-md">
+      <CardContent className="pt-0">
+        <p className="mb-4 line-clamp-2 text-sm text-muted-foreground">{description}</p>
+
+        <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-secondary px-2.5 py-1 text-xs font-medium text-muted-foreground">
               <Tag className="h-3 w-3" />
               {category}
             </span>
-
-            <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
+            {hasUnreadUpdates && (
+              <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+                New update
+              </span>
+            )}
           </div>
-        </CardContent>
-      </Card>
-    </motion.div>
+
+          <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-primary" />
+        </div>
+      </CardContent>
+    </Card>
   );
 };
 

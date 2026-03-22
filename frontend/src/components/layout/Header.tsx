@@ -1,11 +1,15 @@
 import { useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Menu, X, MessageSquare, Plus, LayoutDashboard, LogOut, ShieldCheck } from "lucide-react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { Bell, LayoutDashboard, LogOut, Menu, MessageSquare, Plus, ShieldCheck, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import HeaderAssistant from "@/components/layout/HeaderAssistant";
+import { complaintsApi } from "@/integrations/aws/client";
+import { preloadRouteForPath } from "@/lib/routeLoaders";
+import { cn } from "@/lib/utils";
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -15,18 +19,29 @@ const Header = () => {
   const { toast } = useToast();
   const adminEmails = (import.meta.env.VITE_ADMIN_EMAILS ?? "")
     .split(",")
-    .map((v: string) => v.trim().toLowerCase())
-    .filter((v: string) => v.length > 0);
+    .map((value: string) => value.trim().toLowerCase())
+    .filter((value: string) => value.length > 0);
   const isAdmin = !!user?.email && adminEmails.includes(user.email.toLowerCase());
+
+  const notificationsQuery = useQuery({
+    queryKey: ["notifications", user?.id],
+    queryFn: complaintsApi.getNotifications,
+    enabled: !!user,
+    staleTime: 120_000,
+    refetchOnMount: false,
+  });
+  const unreadCount = notificationsQuery.data?.total ?? 0;
 
   const navItems = isAdmin
     ? [
         { path: "/", label: "Home", icon: null },
+        { path: "/notifications", label: "Notifications", icon: Bell, count: unreadCount },
         { path: "/admin", label: "Admin", icon: ShieldCheck },
       ]
     : [
         { path: "/", label: "Home", icon: null },
         { path: "/dashboard", label: "My Complaints", icon: LayoutDashboard },
+        { path: "/notifications", label: "Notifications", icon: Bell, count: unreadCount },
         { path: "/submit", label: "Submit Complaint", icon: Plus },
       ];
 
@@ -42,65 +57,73 @@ const Header = () => {
   };
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-card/80 backdrop-blur-md">
-      <div className="container mx-auto flex h-16 items-center justify-between px-4">
-        <Link to="/" className="flex items-center gap-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl gradient-primary">
+    <header className="sticky top-0 z-50 w-full px-3 pt-3 md:px-4">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between rounded-[24px] border border-border/70 bg-background/95 px-4 shadow-sm">
+        <Link to="/" className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl gradient-primary shadow-sm">
             <MessageSquare className="h-5 w-5 text-primary-foreground" />
           </div>
-          <span className="text-xl font-bold text-foreground">CampusVoice</span>
+          <div>
+            <span className="heading-display text-xl font-bold text-foreground">CampusVoice</span>
+            <p className="hidden text-xs text-muted-foreground md:block">Student grievance desk</p>
+          </div>
         </Link>
 
-        {/* Desktop Navigation */}
-        <nav className="hidden md:flex items-center gap-1">
+        <nav className="hidden items-center gap-2 md:flex">
           {navItems.map((item) => (
             <Link
               key={item.path}
               to={item.path}
-              className={`relative px-4 py-2 text-sm font-medium transition-colors rounded-lg ${
+              onMouseEnter={() => preloadRouteForPath(item.path)}
+              onFocus={() => preloadRouteForPath(item.path)}
+              className={cn(
+                "relative rounded-full px-4 py-2 text-sm font-medium transition-colors",
                 isActive(item.path)
-                  ? "text-primary"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
-              }`}
+                  ? "gradient-primary text-white shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
             >
-              {item.label}
               {isActive(item.path) && (
-                <motion.div
-                  layoutId="activeTab"
-                  className="absolute inset-0 rounded-lg bg-primary/10"
-                  transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                <motion.span
+                  layoutId="header-active-tab"
+                  className="absolute inset-0 rounded-full gradient-primary shadow-sm"
+                  transition={{ type: "spring", stiffness: 520, damping: 38, mass: 0.55 }}
                 />
               )}
+              <span className="relative z-10">{item.label}</span>
+              {item.count ? (
+                <span className="relative z-10 ml-2 inline-flex min-w-5 items-center justify-center rounded-full bg-primary px-1.5 py-0.5 text-[11px] font-semibold text-primary-foreground">
+                  {item.count > 99 ? "99+" : item.count}
+                </span>
+              ) : null}
             </Link>
           ))}
         </nav>
 
-        <div className="hidden md:flex items-center gap-3">
+        <div className="hidden items-center gap-3 md:flex">
           <HeaderAssistant />
           {user ? (
             <>
-              <span className="text-sm text-muted-foreground">
-                {user.email}
-              </span>
-              <Button variant="outline" size="sm" onClick={handleSignOut}>
-                <LogOut className="h-4 w-4 mr-2" />
+              <span className="max-w-[220px] truncate text-sm text-muted-foreground">{user.email}</span>
+              <Button variant="outline" size="sm" className="rounded-full" onClick={handleSignOut}>
+                <LogOut className="mr-2 h-4 w-4" />
                 Sign Out
               </Button>
             </>
           ) : (
             <>
               <Link to="/auth">
-                <Button variant="outline" size="sm">
+                <Button variant="ghost" size="sm" className="rounded-full">
                   Sign In
                 </Button>
               </Link>
               <Link to="/admin-login">
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" className="rounded-full">
                   Admin Login
                 </Button>
               </Link>
               <Link to="/auth">
-                <Button variant="hero" size="sm">
+                <Button variant="hero" size="sm" className="rounded-full">
                   Get Started
                 </Button>
               </Link>
@@ -108,65 +131,67 @@ const Header = () => {
           )}
         </div>
 
-        {/* Mobile Menu Button */}
         <button
-          className="md:hidden p-2 rounded-lg hover:bg-accent"
-          onClick={() => setIsMenuOpen(!isMenuOpen)}
+          className="rounded-full p-2 hover:bg-accent md:hidden"
+          onClick={() => setIsMenuOpen((open) => !open)}
         >
           {isMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
       </div>
 
-      {/* Mobile Navigation */}
       {isMenuOpen && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          className="md:hidden border-t bg-card"
-        >
-          <nav className="container mx-auto px-4 py-4 flex flex-col gap-2">
+        <div className="mx-auto mt-2 max-w-7xl rounded-[24px] border border-border/70 bg-background/95 shadow-sm md:hidden">
+          <nav className="flex flex-col gap-2 px-4 py-4">
             {navItems.map((item) => (
               <Link
                 key={item.path}
                 to={item.path}
+                onMouseEnter={() => preloadRouteForPath(item.path)}
+                onFocus={() => preloadRouteForPath(item.path)}
                 onClick={() => setIsMenuOpen(false)}
-                className={`flex items-center gap-2 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                className={cn(
+                  "flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium transition-colors",
                   isActive(item.path)
-                    ? "bg-primary/10 text-primary"
+                    ? "gradient-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                }`}
+                )}
               >
                 {item.icon && <item.icon className="h-4 w-4" />}
                 {item.label}
+                {item.count ? (
+                  <span className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-primary px-1.5 py-0.5 text-[11px] font-semibold text-primary-foreground">
+                    {item.count > 99 ? "99+" : item.count}
+                  </span>
+                ) : null}
               </Link>
             ))}
-            <div className="flex flex-col gap-2 pt-4 border-t mt-2">
+
+            <div className="mt-2 flex flex-col gap-2 border-t pt-4">
               <div className="px-1">
                 <HeaderAssistant />
               </div>
               {user ? (
                 <>
-                  <p className="text-sm text-muted-foreground px-4">{user.email}</p>
-                  <Button variant="outline" className="w-full" onClick={handleSignOut}>
-                    <LogOut className="h-4 w-4 mr-2" />
+                  <p className="px-4 text-sm text-muted-foreground">{user.email}</p>
+                  <Button variant="outline" className="w-full rounded-2xl" onClick={handleSignOut}>
+                    <LogOut className="mr-2 h-4 w-4" />
                     Sign Out
                   </Button>
                 </>
               ) : (
                 <>
                   <Link to="/auth" onClick={() => setIsMenuOpen(false)}>
-                    <Button variant="outline" className="w-full">
+                    <Button variant="ghost" className="w-full rounded-2xl">
                       Sign In
                     </Button>
                   </Link>
                   <Link to="/admin-login" onClick={() => setIsMenuOpen(false)}>
-                    <Button variant="outline" className="w-full">
+                    <Button variant="outline" className="w-full rounded-2xl">
                       Admin Login
                     </Button>
                   </Link>
                   <Link to="/auth" onClick={() => setIsMenuOpen(false)}>
-                    <Button variant="hero" className="w-full">
+                    <Button variant="hero" className="w-full rounded-2xl">
                       Get Started
                     </Button>
                   </Link>
@@ -174,7 +199,7 @@ const Header = () => {
               )}
             </div>
           </nav>
-        </motion.div>
+        </div>
       )}
     </header>
   );

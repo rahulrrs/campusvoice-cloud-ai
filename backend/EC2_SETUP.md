@@ -88,7 +88,7 @@ cp .env.example .env
 
 Set:
 
-- `VITE_API_BASE_URL=http://localhost:8000`
+- `VITE_API_BASE_URL=http://localhost`
 - `VITE_AWS_REGION=<region>`
 - `VITE_AWS_USER_POOL_ID=<pool_id>`
 - `VITE_AWS_USER_POOL_CLIENT_ID=<app_client_id>`

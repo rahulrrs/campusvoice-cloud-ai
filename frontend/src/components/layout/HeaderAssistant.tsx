@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Bot, Send, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,12 @@ type ChatMessage = {
 };
 
 const CHAT_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS ?? 30000);
+const CHAT_STORAGE_KEY = "campusvoice-assistant-chat";
+
+type StoredAssistantState = {
+  messages: ChatMessage[];
+  response: ChatbotResponse | null;
+};
 
 const HeaderAssistant = () => {
   const { user } = useAuth();
@@ -32,8 +38,38 @@ const HeaderAssistant = () => {
   const [response, setResponse] = useState<ChatbotResponse | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const inFlightRef = useRef(false);
+  const scopedStorageKey = useMemo(
+    () => `${CHAT_STORAGE_KEY}:${user?.id ?? "guest"}`,
+    [user?.id]
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.sessionStorage.getItem(scopedStorageKey);
+      if (!raw) {
+        setMessages([]);
+        setResponse(null);
+        return;
+      }
+      const parsed = JSON.parse(raw) as StoredAssistantState;
+      setMessages(Array.isArray(parsed.messages) ? parsed.messages : []);
+      setResponse(parsed.response ?? null);
+    } catch {
+      setMessages([]);
+      setResponse(null);
+    }
+  }, [scopedStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const payload: StoredAssistantState = { messages, response };
+    window.sessionStorage.setItem(scopedStorageKey, JSON.stringify(payload));
+  }, [messages, response, scopedStorageKey]);
 
   const askAssistant = async () => {
+    if (inFlightRef.current || loading) return;
     if (!message.trim()) return;
     if (!user) {
       setError("Sign in to use the assistant.");
@@ -45,6 +81,7 @@ const HeaderAssistant = () => {
       role: m.role,
       text: m.text,
     }));
+    inFlightRef.current = true;
     setMessages((prev) => [...prev, { role: "user", text: userMessage }]);
     setMessage("");
     setLoading(true);
@@ -70,6 +107,7 @@ const HeaderAssistant = () => {
         },
       ]);
     } finally {
+      inFlightRef.current = false;
       setLoading(false);
     }
   };
@@ -107,7 +145,7 @@ const HeaderAssistant = () => {
                   item.role === "user"
                     ? "ml-8 bg-primary text-primary-foreground"
                     : "mr-8 border bg-muted/20"
-                }`}
+                } whitespace-pre-line`}
               >
                 {item.text}
               </div>
@@ -116,6 +154,25 @@ const HeaderAssistant = () => {
           </div>
 
           <div className="border-t p-3">
+            {messages.length > 0 && (
+              <div className="mb-3 flex justify-end">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setMessages([]);
+                    setResponse(null);
+                    setError(null);
+                    if (typeof window !== "undefined") {
+                      window.sessionStorage.removeItem(scopedStorageKey);
+                    }
+                  }}
+                >
+                  Clear chat
+                </Button>
+              </div>
+            )}
             {response?.analysis_preview && (
               <div className="mb-3 rounded-md border bg-muted/20 p-3 text-xs space-y-2">
                 <div className="flex flex-wrap gap-2">
@@ -149,8 +206,9 @@ const HeaderAssistant = () => {
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder="Type your question"
+                disabled={loading}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") {
+                  if (e.key === "Enter" && !loading) {
                     e.preventDefault();
                     void askAssistant();
                   }

@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 import logging
 import os
@@ -9,7 +11,8 @@ import sys
 import threading
 import uuid
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from difflib import get_close_matches
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +24,7 @@ from botocore.config import Config as BotoConfig
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 from psycopg2.extras import Json, RealDictCursor
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -117,6 +121,7 @@ class Settings(BaseModel):
     cors_allow_origin: str = Field(default="*")
     presigned_url_expires_seconds: int = Field(default=900)
     admin_emails: str = Field(default="")
+    super_admin_emails: str = Field(default="")
     backbone_model_name: str = Field(default="distilbert-base-uncased")
     backbone_model_dir: str = Field(default=str(APP_ROOT / "outputs" / "general_complaint_model"))
     chatbot_provider: str = Field(default="gemini")
@@ -138,6 +143,7 @@ def get_settings() -> Settings:
         cors_allow_origin=os.getenv("CORS_ALLOW_ORIGIN", "*"),
         presigned_url_expires_seconds=int(os.getenv("PRESIGNED_URL_EXPIRES_SECONDS", "900")),
         admin_emails=os.getenv("ADMIN_EMAILS", ""),
+        super_admin_emails=os.getenv("SUPER_ADMIN_EMAILS", ""),
         backbone_model_name=os.getenv("BACKBONE_MODEL_NAME", "distilbert-base-uncased"),
         backbone_model_dir=os.getenv(
             "BACKBONE_MODEL_DIR",
@@ -255,7 +261,78 @@ def _get_jwks_client() -> jwt.PyJWKClient:
 class CurrentUser(BaseModel):
     user_id: str
     email: str | None = None
+    role: str = "user"
     is_admin: bool = False
+    is_super_admin: bool = False
+
+
+_STATUS_INPUT_ALIASES = {
+    "submitted": "submitted",
+    "pending": "pending",
+    "in_progress": "in_progress",
+    "in-progress": "in_progress",
+    "resolved": "resolved",
+    "rejected": "rejected",
+}
+_STATUS_API_LABELS = {
+    "submitted": "submitted",
+    "pending": "pending",
+    "in_progress": "in-progress",
+    "resolved": "resolved",
+    "rejected": "rejected",
+}
+_FAQ_ITEMS = [
+    {
+        "id": "faq-1",
+        "question": "Can I submit a complaint anonymously?",
+        "answer": "Yes. Anonymous submission is on by default. You can choose to reveal your identity before submitting if you want follow-up tied to your name.",
+    },
+    {
+        "id": "faq-2",
+        "question": "How do I track my complaint?",
+        "answer": "Open your dashboard and select a complaint to view its status and timeline from submission to resolution.",
+    },
+    {
+        "id": "faq-3",
+        "question": "What statuses can a complaint have?",
+        "answer": "Complaints move through submitted, pending, in progress, and resolved. Older records may still show rejected for backward compatibility.",
+    },
+    {
+        "id": "faq-4",
+        "question": "Can I upload evidence?",
+        "answer": "Yes. You can attach images, documents, and audio files. Voice notes recorded in the browser are also supported.",
+    },
+    {
+        "id": "faq-5",
+        "question": "How long does it take for a complaint to be reviewed?",
+        "answer": "Review time depends on category and urgency. High-priority complaints are surfaced faster, and you can monitor each stage from the dashboard timeline.",
+    },
+    {
+        "id": "faq-6",
+        "question": "Can I reopen a resolved complaint?",
+        "answer": "Yes. If a resolved issue still persists, open the complaint detail page and submit a reopen reason so the team can review it again.",
+    },
+    {
+        "id": "faq-7",
+        "question": "Who can see my complaint details?",
+        "answer": "Only the relevant admins and support staff handling the issue should see the complaint details. Anonymous submissions hide your identity from regular workflow views.",
+    },
+    {
+        "id": "faq-8",
+        "question": "Why does my complaint show pending sync?",
+        "answer": "Pending sync appears when you submit while offline or while the network is unstable. The app stores the complaint safely and syncs it automatically when connectivity returns.",
+    },
+    {
+        "id": "faq-9",
+        "question": "Can I get updates after submitting a complaint?",
+        "answer": "Yes. Use the Notifications page and the complaint conversation panel to follow replies, status changes, assignment progress, and resolution updates.",
+    },
+    {
+        "id": "faq-10",
+        "question": "What kind of evidence is most useful?",
+        "answer": "Clear descriptions, exact time and location, and any supporting screenshots, photos, documents, or audio notes help the system and admins review complaints faster.",
+    },
+]
 
 
 def _get_admin_email_set() -> set[str]:
@@ -264,6 +341,179 @@ def _get_admin_email_set() -> set[str]:
         for item in settings.admin_emails.split(",")
         if item.strip()
     }
+
+
+def _get_super_admin_email_set() -> set[str]:
+    return {
+        item.strip().lower()
+        for item in settings.super_admin_emails.split(",")
+        if item.strip()
+    }
+
+
+def _ensure_admin_access_tables(cur) -> None:
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS admin_users (
+            id UUID PRIMARY KEY,
+            email TEXT NOT NULL UNIQUE,
+            role VARCHAR(20) NOT NULL DEFAULT 'admin',
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            invite_token TEXT,
+            invite_expires_at TIMESTAMPTZ,
+            invited_by TEXT,
+            accepted_by_user_id TEXT,
+            accepted_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_admin_users_email
+        ON admin_users (email)
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_admin_users_status_role
+        ON admin_users (status, role)
+        """
+    )
+
+
+def _normalize_admin_role(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized == "super_admin":
+        return "super_admin"
+    if normalized == "admin":
+        return "admin"
+    return "user"
+
+
+def _normalize_admin_status(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"pending", "active", "suspended", "revoked"}:
+        return normalized
+    return "pending"
+
+
+def _serialize_admin_access_row(row: dict[str, Any]) -> dict[str, Any]:
+    serialized = dict(row)
+    for dt_key in ("invite_expires_at", "accepted_at", "created_at", "updated_at"):
+        value = serialized.get(dt_key)
+        if isinstance(value, datetime):
+            serialized[dt_key] = value.astimezone(timezone.utc).isoformat()
+    serialized["role"] = _normalize_admin_role(serialized.get("role"))
+    serialized["status"] = _normalize_admin_status(serialized.get("status"))
+    serialized["email"] = str(serialized.get("email") or "").strip().lower()
+    return serialized
+
+
+def _get_db_access_record(email: str | None) -> dict[str, Any] | None:
+    normalized_email = str(email or "").strip().lower()
+    if not normalized_email:
+        return None
+    try:
+        with get_db_conn() as conn:
+            with conn.cursor() as cur:
+                _ensure_admin_access_tables(cur)
+                cur.execute(
+                    """
+                    SELECT id, email, role, status, invite_token, invite_expires_at, invited_by,
+                           accepted_by_user_id, accepted_at, created_at, updated_at
+                    FROM admin_users
+                    WHERE lower(email) = %s
+                    """,
+                    (normalized_email,),
+                )
+                row = cur.fetchone()
+        return row
+    except Exception:
+        return None
+
+
+def _resolve_access_from_sources(email: str | None) -> tuple[str, bool, bool]:
+    normalized_email = str(email or "").strip().lower()
+    if not normalized_email:
+        return ("user", False, False)
+
+    if normalized_email in _get_super_admin_email_set():
+        return ("super_admin", True, True)
+
+    db_row = _get_db_access_record(normalized_email)
+    if db_row:
+        role = _normalize_admin_role(db_row.get("role"))
+        status_value = _normalize_admin_status(db_row.get("status"))
+        if status_value == "active" and role in {"admin", "super_admin"}:
+            return (role, True, role == "super_admin")
+
+    if normalized_email in _get_admin_email_set():
+        return ("admin", True, False)
+    return ("user", False, False)
+
+
+def _list_pending_invites_for_email(email: str | None) -> list[dict[str, Any]]:
+    normalized_email = str(email or "").strip().lower()
+    if not normalized_email:
+        return []
+    try:
+        with get_db_conn() as conn:
+            with conn.cursor() as cur:
+                _ensure_admin_access_tables(cur)
+                cur.execute(
+                    """
+                    SELECT id, email, role, status, invite_token, invite_expires_at, invited_by,
+                           accepted_by_user_id, accepted_at, created_at, updated_at
+                    FROM admin_users
+                    WHERE lower(email) = %s
+                      AND status = 'pending'
+                    ORDER BY created_at DESC
+                    """,
+                    (normalized_email,),
+                )
+                rows = cur.fetchall()
+        return [_serialize_admin_access_row(row) for row in rows]
+    except Exception:
+        return []
+
+
+class AdminAccessRecord(BaseModel):
+    id: str
+    email: str
+    role: str
+    status: str
+    invite_token: str | None = None
+    invite_expires_at: str | None = None
+    invited_by: str | None = None
+    accepted_by_user_id: str | None = None
+    accepted_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class AccessProfileResponse(BaseModel):
+    user_id: str
+    email: str | None = None
+    role: str
+    is_admin: bool
+    is_super_admin: bool
+    pending_invites: list[AdminAccessRecord] = Field(default_factory=list)
+
+
+class AdminInviteRequest(BaseModel):
+    email: str
+    role: str = Field(default="admin")
+
+
+class AdminInviteAcceptRequest(BaseModel):
+    token: str
+
+
+class AdminAccessUpdateRequest(BaseModel):
+    role: str | None = None
+    status: str | None = None
 
 
 def get_current_user(authorization: str | None = Header(default=None)) -> CurrentUser:
@@ -316,8 +566,14 @@ def get_current_user(authorization: str | None = Header(default=None)) -> Curren
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token missing sub")
     email = payload.get("email")
     email_str = email if isinstance(email, str) else None
-    is_admin = bool(email_str and email_str.lower() in _get_admin_email_set())
-    return CurrentUser(user_id=user_id, email=email_str, is_admin=is_admin)
+    role, is_admin, is_super_admin = _resolve_access_from_sources(email_str)
+    return CurrentUser(
+        user_id=user_id,
+        email=email_str,
+        role=role,
+        is_admin=is_admin,
+        is_super_admin=is_super_admin,
+    )
 
 
 def require_admin(current_user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
@@ -326,14 +582,31 @@ def require_admin(current_user: CurrentUser = Depends(get_current_user)) -> Curr
     return current_user
 
 
+def require_super_admin(current_user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    if not current_user.is_super_admin:
+        raise HTTPException(status_code=403, detail="Super admin access required")
+    return current_user
+
+
 def _serialize_row(row: dict[str, Any]) -> dict[str, Any]:
     serialized = dict(row)
-    created_at = serialized.get("created_at")
-    updated_at = serialized.get("updated_at")
-    if isinstance(created_at, datetime):
-        serialized["created_at"] = created_at.astimezone(timezone.utc).isoformat()
-    if isinstance(updated_at, datetime):
-        serialized["updated_at"] = updated_at.astimezone(timezone.utc).isoformat()
+    for dt_key in (
+        "created_at",
+        "updated_at",
+        "submitted_at",
+        "pending_at",
+        "in_progress_at",
+        "resolved_at",
+        "last_student_update_at",
+        "last_public_admin_update_at",
+        "last_user_viewed_updates_at",
+        "last_admin_viewed_updates_at",
+        "reopened_at",
+        "sla_due_at",
+    ):
+        value = serialized.get(dt_key)
+        if isinstance(value, datetime):
+            serialized[dt_key] = value.astimezone(timezone.utc).isoformat()
     attachments = serialized.get("attachments")
     if not isinstance(attachments, list):
         serialized["attachments"] = []
@@ -343,12 +616,556 @@ def _serialize_row(row: dict[str, Any]) -> dict[str, Any]:
     analysis = serialized.get("analysis")
     if not isinstance(analysis, dict):
         serialized["analysis"] = {}
+    decision_reason = serialized.get("decision_reason")
+    if not isinstance(decision_reason, dict):
+        serialized["decision_reason"] = {}
+    fairness_flags = serialized.get("fairness_flags")
+    if not isinstance(fairness_flags, list):
+        serialized["fairness_flags"] = []
+    serialized["status"] = _STATUS_API_LABELS.get(str(serialized.get("status", "")).strip(), serialized.get("status", "pending"))
+    serialized["is_anonymous"] = bool(serialized.get("is_anonymous", True))
+    serialized["reopen_count"] = int(serialized.get("reopen_count", 0) or 0)
+    serialized["resolution_summary"] = str(serialized.get("resolution_summary") or "").strip() or None
+    serialized["requires_human_review"] = bool(serialized.get("requires_human_review", False))
+    serialized["risk_score"] = float(serialized.get("risk_score", 0) or 0)
+    serialized["routing_confidence"] = float(serialized.get("routing_confidence", 0) or 0)
+    serialized["decision_state"] = str(serialized.get("decision_state") or "submitted")
+    serialized["decision_source"] = str(serialized.get("decision_source") or "system")
+    serialized["quarantined_reason"] = str(serialized.get("quarantined_reason") or "").strip() or None
+    serialized["auto_route_version"] = str(serialized.get("auto_route_version") or "rules-v1")
+    serialized["escalation_level"] = str(serialized.get("escalation_level") or "").strip() or None
+    last_admin_update = row.get("last_public_admin_update_at")
+    last_user_seen = row.get("last_user_viewed_updates_at")
+    last_student_update = row.get("last_student_update_at")
+    last_admin_seen = row.get("last_admin_viewed_updates_at")
+    serialized["has_unread_updates_for_user"] = bool(
+        isinstance(last_admin_update, datetime)
+        and (not isinstance(last_user_seen, datetime) or last_admin_update > last_user_seen)
+    )
+    serialized["has_unread_updates_for_admin"] = bool(
+        isinstance(last_student_update, datetime)
+        and (not isinstance(last_admin_seen, datetime) or last_student_update > last_admin_seen)
+    )
     return serialized
+
+
+def _serialize_user_row(row: dict[str, Any]) -> dict[str, Any]:
+    serialized = _serialize_row(row)
+    serialized.pop("analysis", None)
+    return serialized
+
+
+def _serialize_update_row(row: dict[str, Any]) -> dict[str, Any]:
+    serialized = dict(row)
+    value = serialized.get("created_at")
+    if isinstance(value, datetime):
+        serialized["created_at"] = value.astimezone(timezone.utc).isoformat()
+    serialized["is_internal"] = bool(serialized.get("is_internal", False))
+    serialized["author_role"] = str(serialized.get("author_role", "")).strip() or "system"
+    return serialized
+
+
+def _serialize_audit_row(row: dict[str, Any]) -> dict[str, Any]:
+    serialized = dict(row)
+    value = serialized.get("created_at")
+    if isinstance(value, datetime):
+        serialized["created_at"] = value.astimezone(timezone.utc).isoformat()
+    for key in ("previous_state", "new_state", "reason"):
+        if not isinstance(serialized.get(key), dict):
+            serialized[key] = {}
+    serialized["actor_type"] = str(serialized.get("actor_type") or "system")
+    serialized["event_type"] = str(serialized.get("event_type") or "unknown")
+    serialized["actor_id"] = str(serialized.get("actor_id") or "").strip() or None
+    serialized["model_version"] = str(serialized.get("model_version") or "").strip() or None
+    serialized["rule_version"] = str(serialized.get("rule_version") or "").strip() or None
+    return serialized
+
+
+def _notification_item(
+    *,
+    complaint_id: str,
+    title: str,
+    category: str,
+    status_value: str,
+    timestamp: datetime | None,
+    group_key: str,
+    group_label: str,
+    department: str | None = None,
+    priority: str | None = None,
+    preview: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "complaint_id": complaint_id,
+        "title": title,
+        "category": category,
+        "status": _STATUS_API_LABELS.get(status_value, status_value),
+        "timestamp": timestamp.astimezone(timezone.utc).isoformat() if isinstance(timestamp, datetime) else None,
+        "group_key": group_key,
+        "group_label": group_label,
+        "department": department,
+        "priority": priority,
+        "preview": preview,
+    }
+
+
+def _build_admin_complaint_filters(
+    *,
+    status: str | None = None,
+    department: str | None = None,
+    assigned_to: str | None = None,
+    review_state: str | None = None,
+    q: str | None = None,
+) -> tuple[list[str], list[Any]]:
+    filters: list[str] = []
+    params: list[Any] = []
+
+    if status:
+        normalized_status = _normalize_status_input(status)
+        if normalized_status == "pending":
+            filters.append("status IN ('submitted', 'pending')")
+        else:
+            filters.append("status = %s")
+            params.append(normalized_status)
+
+    if department and department.strip().lower() != "all":
+        filters.append("department = %s")
+        params.append(department.strip())
+
+    if assigned_to and assigned_to.strip().lower() != "all":
+        filters.append("assigned_to = %s")
+        params.append(assigned_to.strip())
+
+    if q and q.strip():
+        filters.append("(title ILIKE %s OR description ILIKE %s OR category ILIKE %s)")
+        like = f"%{q.strip()}%"
+        params.extend([like, like, like])
+
+    review_state_norm = str(review_state or "").strip().lower()
+    attention_sql = """
+        (
+          COALESCE((analysis->'abuse'->>'toxicity_score')::float, 0) >= 0.35
+          OR COALESCE((analysis->'abuse'->>'spam_score')::float, 0) >= 0.35
+          OR COALESCE((analysis->'duplicate_detection'->>'is_duplicate')::boolean, false)
+          OR jsonb_array_length(COALESCE(analysis->'submission_guard'->'warnings', '[]'::jsonb)) > 0
+        )
+    """
+    if review_state_norm == "needs_attention":
+        filters.append(attention_sql)
+    elif review_state_norm == "human_review":
+        filters.append("COALESCE(requires_human_review, FALSE)")
+    elif review_state_norm == "escalated":
+        filters.append("decision_state = 'escalated'")
+    elif review_state_norm == "quarantined":
+        filters.append("decision_state = 'quarantined'")
+    elif review_state_norm == "duplicates":
+        filters.append("COALESCE((analysis->'duplicate_detection'->>'is_duplicate')::boolean, false)")
+    elif review_state_norm == "clean":
+        filters.append(f"NOT {attention_sql}")
+
+    return filters, params
+
+
+def _complaint_report_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(row.get("id") or ""),
+        "title": str(row.get("title") or ""),
+        "category": str(row.get("category") or ""),
+        "priority": str(row.get("priority") or ""),
+        "department": str(row.get("department") or ""),
+        "assigned_to": str(row.get("assigned_to") or ""),
+        "status": _STATUS_API_LABELS.get(str(row.get("status") or ""), str(row.get("status") or "")),
+        "is_anonymous": bool(row.get("is_anonymous")),
+        "reopen_count": int(row.get("reopen_count") or 0),
+        "submitted_at": row.get("submitted_at").isoformat() if row.get("submitted_at") else "",
+        "pending_at": row.get("pending_at").isoformat() if row.get("pending_at") else "",
+        "in_progress_at": row.get("in_progress_at").isoformat() if row.get("in_progress_at") else "",
+        "resolved_at": row.get("resolved_at").isoformat() if row.get("resolved_at") else "",
+        "created_at": row.get("created_at").isoformat() if row.get("created_at") else "",
+        "updated_at": row.get("updated_at").isoformat() if row.get("updated_at") else "",
+    }
+
+
+def _normalize_status_input(raw_status: str | None) -> str:
+    normalized = str(raw_status or "").strip().lower()
+    mapped = _STATUS_INPUT_ALIASES.get(normalized)
+    if mapped is None:
+        raise HTTPException(status_code=400, detail="invalid status")
+    return mapped
+
+
+def _status_timestamp_updates(status_value: str) -> tuple[list[str], list[Any]]:
+    now = datetime.now(timezone.utc)
+    updates: list[str] = []
+    values: list[Any] = []
+    if status_value == "submitted":
+        updates.append("submitted_at = COALESCE(submitted_at, %s)")
+        values.append(now)
+    elif status_value == "pending":
+        updates.append("pending_at = COALESCE(pending_at, %s)")
+        values.append(now)
+    elif status_value == "in_progress":
+        updates.append("in_progress_at = COALESCE(in_progress_at, %s)")
+        values.append(now)
+    elif status_value == "resolved":
+        updates.append("resolved_at = COALESCE(resolved_at, %s)")
+        values.append(now)
+    return updates, values
 
 
 def _sanitize_filename(name: str) -> str:
     safe = "".join(ch for ch in name if ch.isalnum() or ch in ("-", "_", "."))
     return safe or "attachment"
+
+
+def _category_alias_map() -> dict[str, list[str]]:
+    categories = _dataset_category_names()
+    if not categories:
+        categories = [item for item in LABEL_TO_DEPT.keys() if item not in {"Unknown", "Other"}]
+
+    aliases: dict[str, list[str]] = {category: [category.lower()] for category in categories}
+    aliases.setdefault("Ragging / Harassment", []).extend(["harassment", "harrassment", "harrssment", "ragging", "bullying"])
+    aliases.setdefault("Safety & Security", []).extend(["security", "safety", "unsafe", "theft", "stolen"])
+    aliases.setdefault("IT & Digital Services", []).extend(["wifi", "wi fi", "internet", "portal", "website", "login", "server"])
+    aliases.setdefault("Infrastructure", []).extend(["infrastructure", "maintenance", "water leak", "electricity", "washroom"])
+    aliases.setdefault("Hostel", []).extend(["hostel", "dorm", "warden", "room"])
+    aliases.setdefault("Fees", []).extend(["fees", "fee", "payment", "refund"])
+    aliases.setdefault("Examination", []).extend(["exam", "examination", "result", "hall ticket"])
+    aliases.setdefault("Transportation", []).extend(["transport", "transportation", "bus", "shuttle", "driver"])
+    aliases.setdefault("Placement & Career Services", []).extend(["placement", "placements", "internship", "career"])
+    aliases.setdefault("Certificate & Records", []).extend(["certificate", "records", "transcript", "bonafide"])
+    return {category: _dedupe_keep_order(values) for category, values in aliases.items()}
+
+
+def _recover_fuzzy_category_label(text: str, default_label: str) -> str:
+    normalized = _normalize_text(text)
+    if not normalized:
+        return default_label
+
+    alias_map = _category_alias_map()
+    for category, aliases in alias_map.items():
+        if any(alias in normalized for alias in aliases):
+            return category
+
+    vocabulary: dict[str, str] = {}
+    for category, aliases in alias_map.items():
+        for alias in aliases:
+            vocabulary[alias] = category
+
+    tokens = [token for token in _tokenize(text) if len(token) >= 4]
+    for token in tokens:
+        match = get_close_matches(token, vocabulary.keys(), n=1, cutoff=0.82)
+        if match:
+            return vocabulary[match[0]]
+
+    return default_label
+
+
+def _attachment_metadata_analysis(
+    attachment_keys: list[str],
+    evidence_types: list[str],
+) -> dict[str, Any]:
+    entries: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    image_count = 0
+
+    for key in attachment_keys:
+        file_name = key.split("/")[-1]
+        ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+        is_image = ext in {"jpg", "jpeg", "png", "webp", "gif", "bmp", "heic"}
+        if is_image:
+            image_count += 1
+        entry_warnings: list[str] = []
+        if is_image and re.fullmatch(r"(img|image|photo|scan)[-_]?\d*", file_name.rsplit(".", 1)[0].lower()):
+            entry_warnings.append("Generic image filename; context may need manual verification.")
+        entries.append(
+            {
+                "file_name": file_name,
+                "extension": ext or "unknown",
+                "kind": "image" if is_image else "file",
+                "warnings": entry_warnings,
+            }
+        )
+
+    if image_count:
+        warnings.append("Image verification uses basic metadata checks only; manual review may still be needed.")
+    if "image" in evidence_types and image_count == 0:
+        warnings.append("Image evidence was declared but no image attachment key was found.")
+
+    return {
+        "attachments": entries,
+        "image_count": image_count,
+        "warnings": warnings,
+    }
+
+
+def _submission_guard(analysis: dict[str, Any]) -> dict[str, Any]:
+    abuse = analysis.get("abuse", {}) if isinstance(analysis, dict) else {}
+    duplicate = analysis.get("duplicate_detection", {}) if isinstance(analysis, dict) else {}
+    user_behavior = abuse.get("user_behavior", {}) if isinstance(abuse, dict) else {}
+    toxicity = float(abuse.get("toxicity_score", 0.0) or 0.0)
+    spam = float(abuse.get("spam_score", 0.0) or 0.0)
+    behavior_risk = float(user_behavior.get("risk_score", 0.0) or 0.0)
+
+    warnings: list[str] = []
+    reasons: list[str] = []
+
+    if toxicity >= 0.35:
+        warnings.append("Please rewrite the complaint in respectful language so the team can review it quickly.")
+    if spam >= 0.35:
+        warnings.append("The complaint text looks repetitive or promotional. Please keep it factual and specific.")
+    if bool(duplicate.get("is_duplicate")) and float(duplicate.get("score", 0.0) or 0.0) >= 0.94:
+        warnings.append("This looks very similar to an earlier complaint. Consider updating the existing complaint instead.")
+
+    if toxicity >= 0.75:
+        reasons.append("The complaint could not be submitted because it contains strongly abusive language.")
+    if spam >= 0.72 or (spam >= 0.55 and behavior_risk >= 0.45):
+        reasons.append("The complaint could not be submitted because it looks like spam or repeated non-genuine content.")
+
+    return {
+        "allow_submission": not reasons,
+        "warnings": warnings,
+        "reasons": reasons,
+    }
+
+
+def _clamp_score(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
+    return max(minimum, min(maximum, float(value)))
+
+
+def _calculate_sla_due_at(priority: str, category: str, risk_score: float) -> datetime:
+    normalized_priority = priority.strip().lower()
+    hours = 72
+    if normalized_priority == "high":
+        hours = 12
+    elif normalized_priority == "medium":
+        hours = 36
+
+    if category in {"Ragging / Harassment", "Safety & Security"}:
+        hours = min(hours, 6)
+    elif risk_score >= 0.8:
+        hours = min(hours, 8)
+    elif risk_score >= 0.65:
+        hours = min(hours, 18)
+
+    return datetime.now(timezone.utc) + timedelta(hours=hours)
+
+
+def _detect_fairness_flags(
+    *,
+    category: str,
+    is_anonymous: bool,
+    abuse_score: float,
+    spam_score: float,
+    urgency_score: float,
+    duplicate_score: float,
+) -> list[str]:
+    flags: list[str] = []
+    sensitive_categories = {"Ragging / Harassment", "Safety & Security", "Health Services"}
+    if category in sensitive_categories:
+        flags.append("sensitive-category")
+    if is_anonymous and category in sensitive_categories:
+        flags.append("anonymous-sensitive")
+    if spam_score >= 0.35 and category in sensitive_categories:
+        flags.append("review-spam-on-sensitive")
+    if abuse_score >= 0.35 and urgency_score >= 0.55:
+        flags.append("emotionally-charged-urgent")
+    if duplicate_score >= 0.9 and urgency_score >= 0.55:
+        flags.append("possible-repeat-urgent-issue")
+    return flags
+
+
+def _build_automation_decision(
+    *,
+    analysis: dict[str, Any],
+    fallback_priority: str,
+    fallback_category: str,
+    is_anonymous: bool,
+) -> dict[str, Any]:
+    classification = analysis.get("classification", {}) if isinstance(analysis, dict) else {}
+    sentiment = analysis.get("sentiment", {}) if isinstance(analysis, dict) else {}
+    abuse = analysis.get("abuse", {}) if isinstance(analysis, dict) else {}
+    duplicate = analysis.get("duplicate_detection", {}) if isinstance(analysis, dict) else {}
+
+    label = str(classification.get("label") or fallback_category or "Uncategorized").strip()
+    if label.lower() in {"unknown", "uncategorized"}:
+        label = fallback_category or "Uncategorized"
+
+    priority = str(classification.get("priority") or fallback_priority or "medium").strip().lower()
+    if priority not in {"low", "medium", "high"}:
+        priority = fallback_priority if fallback_priority in {"low", "medium", "high"} else "medium"
+
+    department = str(classification.get("department") or LABEL_TO_DEPT.get(label, "Helpdesk")).strip() or "Helpdesk"
+    label_confidence = _clamp_score(float(classification.get("label_confidence", 0.0) or 0.0))
+    priority_confidence = _clamp_score(float(classification.get("priority_confidence", 0.0) or 0.0))
+    urgency_score = _clamp_score(float(sentiment.get("urgency_score", 0.0) or 0.0))
+    toxicity_score = _clamp_score(float(abuse.get("toxicity_score", 0.0) or 0.0))
+    spam_score = _clamp_score(float(abuse.get("spam_score", 0.0) or 0.0))
+    duplicate_score = _clamp_score(float(duplicate.get("score", 0.0) or 0.0))
+    is_duplicate = bool(duplicate.get("is_duplicate", False))
+
+    routing_confidence = round((label_confidence * 0.65) + (priority_confidence * 0.35), 4)
+    risk_score = round(
+        _clamp_score(
+            (urgency_score * 0.36)
+            + (toxicity_score * 0.18)
+            + (spam_score * 0.12)
+            + (duplicate_score * 0.12)
+            + ((1.0 - routing_confidence) * 0.12)
+            + (0.10 if label in {"Ragging / Harassment", "Safety & Security"} else 0.0)
+        ),
+        4,
+    )
+
+    fairness_flags = _detect_fairness_flags(
+        category=label,
+        is_anonymous=is_anonymous,
+        abuse_score=toxicity_score,
+        spam_score=spam_score,
+        urgency_score=urgency_score,
+        duplicate_score=duplicate_score,
+    )
+
+    requires_human_review = bool(
+        routing_confidence < 0.6
+        or spam_score >= 0.55
+        or toxicity_score >= 0.55
+        or "review-spam-on-sensitive" in fairness_flags
+    )
+
+    quarantined_reason: str | None = None
+    escalation_level: str | None = None
+    decision_state = "routed"
+    workflow_status = "pending"
+
+    if label in {"Ragging / Harassment", "Safety & Security"} or risk_score >= 0.8:
+        escalation_level = "high"
+        decision_state = "escalated"
+    elif risk_score >= 0.65:
+        escalation_level = "medium"
+        decision_state = "escalated"
+
+    if spam_score >= 0.72 and routing_confidence < 0.55:
+        quarantined_reason = "High spam likelihood with low routing confidence."
+        decision_state = "quarantined"
+        workflow_status = "submitted"
+        requires_human_review = True
+    elif requires_human_review:
+        decision_state = "in_review"
+        workflow_status = "submitted"
+
+    decision_reason = {
+        "category": label,
+        "priority": priority,
+        "department": department,
+        "routing_confidence": routing_confidence,
+        "risk_score": risk_score,
+        "drivers": {
+            "urgency_score": urgency_score,
+            "toxicity_score": toxicity_score,
+            "spam_score": spam_score,
+            "duplicate_score": duplicate_score,
+            "is_duplicate": is_duplicate,
+        },
+        "explanation": (
+            f"Auto-routed to {department} from category {label} with {priority} priority."
+            if decision_state == "routed"
+            else f"Flagged for {decision_state.replace('_', ' ')} because confidence or risk signals require supervision."
+        ),
+    }
+
+    return {
+        "category": label,
+        "priority": priority,
+        "department": department,
+        "status": workflow_status,
+        "decision_state": decision_state,
+        "risk_score": risk_score,
+        "routing_confidence": routing_confidence,
+        "decision_source": "system",
+        "decision_reason": decision_reason,
+        "fairness_flags": fairness_flags,
+        "requires_human_review": requires_human_review,
+        "escalation_level": escalation_level,
+        "sla_due_at": _calculate_sla_due_at(priority, label, risk_score),
+        "quarantined_reason": quarantined_reason,
+        "auto_route_version": "rules-v1",
+    }
+
+
+def _write_complaint_audit_log(
+    cur: RealDictCursor,
+    *,
+    complaint_id: str,
+    actor_type: str,
+    actor_id: str | None,
+    event_type: str,
+    previous_state: dict[str, Any] | None = None,
+    new_state: dict[str, Any] | None = None,
+    reason: dict[str, Any] | None = None,
+    model_version: str | None = None,
+    rule_version: str | None = None,
+) -> None:
+    cur.execute(
+        """
+        INSERT INTO complaint_audit_log (
+          id, complaint_id, actor_type, actor_id, event_type,
+          previous_state, new_state, reason, model_version, rule_version
+        ) VALUES (
+          %s::uuid, %s::uuid, %s, %s, %s, %s, %s, %s, %s, %s
+        )
+        """,
+        (
+            str(uuid.uuid4()),
+            complaint_id,
+            actor_type,
+            actor_id,
+            event_type,
+            Json(previous_state or {}),
+            Json(new_state or {}),
+            Json(reason or {}),
+            model_version,
+            rule_version,
+        ),
+    )
+
+
+def _validate_upload_request(
+    file_name: str,
+    content_type: str,
+    file_size: int | None,
+) -> dict[str, Any]:
+    safe_name = _sanitize_filename(file_name)
+    ext = safe_name.rsplit(".", 1)[-1].lower() if "." in safe_name else ""
+    size = max(int(file_size or 0), 0)
+    warnings: list[str] = []
+
+    allowed_image = {"jpg", "jpeg", "png", "webp", "gif", "bmp", "heic"}
+    allowed_audio = {"mp3", "wav", "ogg", "m4a", "aac", "webm"}
+    allowed_docs = {"pdf", "doc", "docx", "txt"}
+
+    if content_type.startswith("image/"):
+        if ext and ext not in allowed_image:
+            warnings.append("The image file extension does not fully match the content type.")
+        if size and size > 15 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Images larger than 15 MB are not allowed.")
+        kind = "image"
+    elif content_type.startswith("audio/"):
+        if ext and ext not in allowed_audio:
+            warnings.append("The audio file extension does not fully match the content type.")
+        if size and size > 25 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Audio files larger than 25 MB are not allowed.")
+        kind = "audio"
+    else:
+        if ext and ext not in allowed_docs:
+            raise HTTPException(status_code=400, detail="Only image, audio, PDF, DOC, DOCX, and TXT files are supported.")
+        if size and size > 20 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Documents larger than 20 MB are not allowed.")
+        kind = "document"
+
+    if kind == "image" and re.fullmatch(r"(img|image|photo|scan)[-_]?\d*", safe_name.rsplit(".", 1)[0].lower()):
+        warnings.append("Image verification is limited because the filename is very generic.")
+
+    return {"file_name": safe_name, "kind": kind, "warnings": warnings}
 
 
 class ComplaintIn(BaseModel):
@@ -360,16 +1177,24 @@ class ComplaintCreate(BaseModel):
     description: str
     category: str = "Uncategorized"
     priority: str = "medium"
-    status: str = "pending"
+    status: str = "submitted"
+    is_anonymous: bool = True
     attachments: list[str] = Field(default_factory=list)
     evidence_types: list[str] = Field(default_factory=list)
     source_language: str | None = None
     analysis: dict[str, Any] = Field(default_factory=dict)
 
 
+class FAQItem(BaseModel):
+    id: str
+    question: str
+    answer: str
+
+
 class PresignedUploadRequest(BaseModel):
     fileName: str
     contentType: str = "application/octet-stream"
+    fileSize: int | None = None
 
 
 class PresignedDownloadRequest(BaseModel):
@@ -381,6 +1206,10 @@ class ComplaintAdminUpdate(BaseModel):
     priority: str | None = None
     department: str | None = None
     status: str | None = None
+    decision_state: str | None = None
+    assigned_to: str | None = None
+    admin_notes: str | None = None
+    resolution_summary: str | None = None
 
 
 class AutoClassifyRequest(BaseModel):
@@ -390,6 +1219,38 @@ class AutoClassifyRequest(BaseModel):
 class ComplaintAnalysisRequest(BaseModel):
     title: str = ""
     description: str = ""
+
+
+class ComplaintUpdateCreate(BaseModel):
+    body: str
+
+
+class AdminComplaintUpdateCreate(BaseModel):
+    body: str
+    is_internal: bool = False
+
+
+class ComplaintReopenRequest(BaseModel):
+    reason: str
+
+
+class NotificationMarkReadRequest(BaseModel):
+    complaint_id: str | None = None
+    mark_all: bool = False
+
+
+class ComplaintAuditLogItem(BaseModel):
+    id: str
+    complaint_id: str
+    actor_type: str
+    actor_id: str | None = None
+    event_type: str
+    previous_state: dict[str, Any] = Field(default_factory=dict)
+    new_state: dict[str, Any] = Field(default_factory=dict)
+    reason: dict[str, Any] = Field(default_factory=dict)
+    model_version: str | None = None
+    rule_version: str | None = None
+    created_at: str
 
 
 class ChatTurn(BaseModel):
@@ -417,6 +1278,24 @@ _retrain_in_progress = False
 _chatbot_lock = threading.Lock()
 
 _CHATBOT_INTENTS: dict[str, dict[str, Any]] = {
+    "category_list": {
+        "examples": [
+            "list all categories",
+            "what categories are available",
+            "show complaint categories",
+            "list all complaint types",
+        ],
+        "reply": "I can list all available complaint categories.",
+    },
+    "priority_policy": {
+        "examples": [
+            "is there priority categorization",
+            "what priority levels are there",
+            "how do you know priority",
+            "is there low medium high",
+        ],
+        "reply": "Yes. Complaints are grouped into clear priority levels.",
+    },
     "registration": {
         "examples": [
             "how do i submit a complaint",
@@ -532,6 +1411,58 @@ def _load_id_maps() -> tuple[dict[int, str], dict[int, str]]:
     with open(MODEL_DIR / "id_to_priority.json", "r", encoding="utf-8") as f:
         local_prios = {int(k): v for k, v in json.load(f).items()}
     return local_labels, local_prios
+
+
+def _dedupe_keep_order(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for value in values:
+        key = value.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(value)
+    return out
+
+
+def _dataset_category_names() -> list[str]:
+    dataset_candidates = [
+        APP_ROOT / "data" / "dataset_clean.csv",
+        APP_ROOT / "data" / "dataset.csv",
+    ]
+    for path in dataset_candidates:
+        if not path.exists():
+            continue
+        try:
+            df = pd.read_csv(path, usecols=["label"], low_memory=False)
+            labels = _dedupe_keep_order(
+                sorted({str(v).strip() for v in df["label"].dropna().tolist() if str(v).strip()})
+            )
+            if labels:
+                return labels
+        except Exception:
+            continue
+
+    categories = _dedupe_keep_order(
+        [str(v).strip() for _, v in sorted(id_to_label.items()) if str(v).strip()]
+    )
+    if categories:
+        return categories
+
+    label_map_path = MODEL_DIR / "id_to_label.json"
+    if label_map_path.exists():
+        try:
+            with open(label_map_path, "r", encoding="utf-8") as f:
+                loaded = {int(k): v for k, v in json.load(f).items()}
+            categories = _dedupe_keep_order(
+                [str(v).strip() for _, v in sorted(loaded.items()) if str(v).strip()]
+            )
+            if categories:
+                return categories
+        except Exception:
+            pass
+
+    return []
 
 
 def _priority_to_id(priority: str, prio_map: dict[int, str]) -> int | None:
@@ -790,6 +1721,16 @@ def _ensure_schema() -> None:
         with conn.cursor() as cur:
             cur.execute(
                 """
+                DO $$
+                BEGIN
+                  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'complaint_status') THEN
+                    CREATE TYPE complaint_status AS ENUM ('submitted', 'pending', 'in_progress', 'resolved', 'rejected');
+                  END IF;
+                END $$;
+                """
+            )
+            cur.execute(
+                """
                 ALTER TABLE complaints
                 ADD COLUMN IF NOT EXISTS department VARCHAR(120)
                 """
@@ -810,6 +1751,183 @@ def _ensure_schema() -> None:
                 """
                 ALTER TABLE complaints
                 ADD COLUMN IF NOT EXISTS source_language VARCHAR(40)
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE complaints
+                ADD COLUMN IF NOT EXISTS assigned_to TEXT,
+                ADD COLUMN IF NOT EXISTS admin_notes TEXT
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE complaints
+                ADD COLUMN IF NOT EXISTS last_student_update_at TIMESTAMPTZ,
+                ADD COLUMN IF NOT EXISTS last_public_admin_update_at TIMESTAMPTZ,
+                ADD COLUMN IF NOT EXISTS last_user_viewed_updates_at TIMESTAMPTZ,
+                ADD COLUMN IF NOT EXISTS last_admin_viewed_updates_at TIMESTAMPTZ
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE complaints
+                ADD COLUMN IF NOT EXISTS resolution_summary TEXT,
+                ADD COLUMN IF NOT EXISTS reopened_at TIMESTAMPTZ,
+                ADD COLUMN IF NOT EXISTS reopen_count INTEGER NOT NULL DEFAULT 0
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE complaints
+                ADD COLUMN IF NOT EXISTS decision_state VARCHAR(30) NOT NULL DEFAULT 'submitted',
+                ADD COLUMN IF NOT EXISTS risk_score NUMERIC NOT NULL DEFAULT 0,
+                ADD COLUMN IF NOT EXISTS routing_confidence NUMERIC NOT NULL DEFAULT 0,
+                ADD COLUMN IF NOT EXISTS decision_source TEXT NOT NULL DEFAULT 'system',
+                ADD COLUMN IF NOT EXISTS decision_reason JSONB NOT NULL DEFAULT '{}'::jsonb,
+                ADD COLUMN IF NOT EXISTS fairness_flags JSONB NOT NULL DEFAULT '[]'::jsonb,
+                ADD COLUMN IF NOT EXISTS requires_human_review BOOLEAN NOT NULL DEFAULT FALSE,
+                ADD COLUMN IF NOT EXISTS escalation_level VARCHAR(20),
+                ADD COLUMN IF NOT EXISTS sla_due_at TIMESTAMPTZ,
+                ADD COLUMN IF NOT EXISTS quarantined_reason TEXT,
+                ADD COLUMN IF NOT EXISTS auto_route_version TEXT NOT NULL DEFAULT 'rules-v1'
+                """
+            )
+            cur.execute(
+                """
+                UPDATE complaints
+                SET last_student_update_at = COALESCE(last_student_update_at, submitted_at, created_at)
+                WHERE last_student_update_at IS NULL
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS complaint_updates (
+                  id UUID PRIMARY KEY,
+                  complaint_id UUID NOT NULL REFERENCES complaints(id) ON DELETE CASCADE,
+                  author_role VARCHAR(20) NOT NULL,
+                  author_id TEXT,
+                  body TEXT NOT NULL,
+                  is_internal BOOLEAN NOT NULL DEFAULT FALSE,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_complaint_updates_complaint_created_at
+                ON complaint_updates (complaint_id, created_at ASC)
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS complaint_audit_log (
+                  id UUID PRIMARY KEY,
+                  complaint_id UUID NOT NULL REFERENCES complaints(id) ON DELETE CASCADE,
+                  actor_type VARCHAR(20) NOT NULL,
+                  actor_id TEXT,
+                  event_type VARCHAR(80) NOT NULL,
+                  previous_state JSONB NOT NULL DEFAULT '{}'::jsonb,
+                  new_state JSONB NOT NULL DEFAULT '{}'::jsonb,
+                  reason JSONB NOT NULL DEFAULT '{}'::jsonb,
+                  model_version TEXT,
+                  rule_version TEXT,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_complaint_audit_log_complaint_created_at
+                ON complaint_audit_log (complaint_id, created_at DESC)
+                """
+            )
+            cur.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_complaints_decision_state_created_at
+                ON complaints (decision_state, created_at DESC)
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE complaints
+                ADD COLUMN IF NOT EXISTS is_anonymous BOOLEAN NOT NULL DEFAULT TRUE
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE complaints
+                ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMPTZ,
+                ADD COLUMN IF NOT EXISTS pending_at TIMESTAMPTZ,
+                ADD COLUMN IF NOT EXISTS in_progress_at TIMESTAMPTZ,
+                ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ
+                """
+            )
+            cur.execute(
+                """
+                UPDATE complaints
+                SET submitted_at = COALESCE(submitted_at, created_at)
+                WHERE submitted_at IS NULL
+                """
+            )
+            cur.execute(
+                """
+                UPDATE complaints
+                SET pending_at = COALESCE(pending_at, created_at)
+                WHERE pending_at IS NULL
+                  AND status::text IN ('pending')
+                """
+            )
+            cur.execute(
+                """
+                UPDATE complaints
+                SET in_progress_at = COALESCE(in_progress_at, updated_at, created_at)
+                WHERE in_progress_at IS NULL
+                  AND status::text IN ('in-progress', 'in_progress')
+                """
+            )
+            cur.execute(
+                """
+                UPDATE complaints
+                SET resolved_at = COALESCE(resolved_at, updated_at, created_at)
+                WHERE resolved_at IS NULL
+                  AND status::text IN ('resolved', 'rejected')
+                """
+            )
+            cur.execute(
+                """
+                DO $$
+                BEGIN
+                  IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_name = 'complaints'
+                      AND column_name = 'status'
+                      AND udt_name <> 'complaint_status'
+                  ) THEN
+                    ALTER TABLE complaints
+                      ALTER COLUMN status DROP DEFAULT;
+
+                    ALTER TABLE complaints
+                      ALTER COLUMN status TYPE complaint_status
+                      USING (
+                        CASE
+                          WHEN status = 'in-progress' THEN 'in_progress'::complaint_status
+                          WHEN status = 'in_progress' THEN 'in_progress'::complaint_status
+                          WHEN status = 'resolved' THEN 'resolved'::complaint_status
+                          WHEN status = 'submitted' THEN 'submitted'::complaint_status
+                          WHEN status = 'rejected' THEN 'rejected'::complaint_status
+                          ELSE 'pending'::complaint_status
+                        END
+                      );
+                  END IF;
+                END $$;
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE complaints
+                ALTER COLUMN status SET DEFAULT 'submitted'
                 """
             )
         conn.commit()
@@ -1129,6 +2247,12 @@ def _analyze_text_bundle(title: str, description: str, user_id: str | None = Non
         "priority": prediction["priority"],
         "entities": [entity for entity in [prediction["department"], prediction["label"]] if entity],
     }
+    submission_guard = _submission_guard(
+        {
+            "abuse": abuse,
+            "duplicate_detection": duplicate,
+        }
+    )
 
     return {
         "classification": prediction,
@@ -1137,6 +2261,7 @@ def _analyze_text_bundle(title: str, description: str, user_id: str | None = Non
         "duplicate_detection": duplicate,
         "recommendations": recommendations,
         "knowledge_graph": knowledge_graph,
+        "submission_guard": submission_guard,
         "source_language": _detect_language(text),
     }
 
@@ -1155,6 +2280,12 @@ def _forecast_complaint_trends() -> dict[str, Any]:
             )
             rows = cur.fetchall()
 
+    today = datetime.now(timezone.utc).date()
+    last_30_days = [
+        (today - timedelta(days=offset)).isoformat()
+        for offset in range(29, -1, -1)
+    ]
+
     by_category: dict[str, dict[str, int]] = defaultdict(dict)
     overall_daily: Counter[str] = Counter()
     for row in rows:
@@ -1165,8 +2296,7 @@ def _forecast_complaint_trends() -> dict[str, Any]:
         overall_daily[day] += total
 
     def _series_forecast(day_counts: dict[str, int]) -> dict[str, Any]:
-        ordered = sorted(day_counts.items())
-        values = [count for _, count in ordered]
+        values = [int(day_counts.get(day, 0)) for day in last_30_days]
         if not values:
             return {"recent_average": 0.0, "predicted_next_7_days": 0.0, "trend": "stable"}
         recent = values[-7:] if len(values) >= 7 else values
@@ -1238,26 +2368,39 @@ def _blend_project_general_content(
 
 def _humanize_assistant_reply(intent: str, core: str) -> str:
     openers = {
-        "status_lookup": "Thanks for checking in.",
-        "duplicate_check": "Great question.",
-        "registration": "You are in the right place.",
-        "recommendation_help": "Here is what I suggest.",
-        "complaint_coaching": "I reviewed your complaint text.",
-        "general_help": "Happy to help.",
-        "general_chat": "Sure.",
+        "status_lookup": "I checked that for you.",
+        "duplicate_check": "I looked into that.",
+        "registration": "You're in the right place.",
+        "recommendation_help": "Here is the best next step.",
+        "complaint_coaching": "I can help with that.",
+        "general_help": "I'm here with you.",
+        "general_chat": "Of course.",
     }
     nudges = {
-        "status_lookup": "Would you like me to help you draft a new complaint now?",
-        "duplicate_check": "If you want, share your exact issue text and I can check it more precisely.",
-        "registration": "Would you like a ready-to-use complaint template?",
-        "recommendation_help": "Want me to suggest the best department and priority too?",
-        "complaint_coaching": "If you want, send one more sentence and I will refine it again.",
-        "general_help": "Tell me your issue in one line and I will guide you step by step.",
-        "general_chat": "If you want, I can switch into complaint-helper mode anytime.",
+        "status_lookup": "If you want, I can help you submit the next one too.",
+        "duplicate_check": "Send the exact issue text if you want a closer check.",
+        "registration": "I can also help you write it in a clear way.",
+        "recommendation_help": "I can also suggest the department and priority.",
+        "complaint_coaching": "Send one more line and I can make it clearer.",
+        "general_help": "Tell me the issue in one line and I will guide you.",
+        "general_chat": "If you want, I can switch to complaint help anytime.",
     }
     opener = openers.get(intent, "Happy to help.")
     nudge = nudges.get(intent, nudges["general_help"])
     return f"{opener} {core} {nudge}"
+
+
+def _clean_assistant_text(text: str) -> str:
+    cleaned = str(text or "")
+    cleaned = cleaned.replace("**", "")
+    cleaned = cleaned.replace("__", "")
+    cleaned = cleaned.replace("`", "")
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in cleaned.splitlines()]
+    cleaned = "\n".join([line for line in lines if line])
+    cleaned = re.sub(r"\s*([,.;:!?])", r"\1", cleaned)
+    cleaned = re.sub(r"([,.;:!?])([A-Za-z])", r"\1 \2", cleaned)
+    cleaned = cleaned.replace(" .", ".").replace(" ,", ",")
+    return cleaned.strip()
 
 
 def _is_greeting(text: str) -> bool:
@@ -1299,6 +2442,12 @@ def _classify_query_override(message: str) -> tuple[str, float] | None:
     text = _normalize_text(message)
     if not text:
         return None
+    if re.search(r"\b(list|show|tell me|what are)\b.*\b(categories|category|complaint types)\b", text):
+        return "category_list", 0.99
+    if re.search(r"\b(priority|urgent|urgency)\b.*\b(level|categorization|category|categories)\b", text) or (
+        "priority" in text and any(token in text for token in {"how", "what", "is there"})
+    ):
+        return "priority_policy", 0.97
     if _GENERAL_CHAT_QUERY_RE.search(text):
         return "general_chat", 0.98
     if _GENERAL_ASSISTANT_QUERY_RE.search(text):
@@ -1314,34 +2463,51 @@ def _general_chat_response(message: str) -> tuple[str, list[str]]:
     text = _normalize_text(message)
     if "how are you" in text:
         return (
-            "I am doing well and ready to help. You can chat with me generally, or ask me about complaints, status, evidence, or drafting.",
+            "I'm doing well. I can chat normally, or help with complaints, status, evidence, and drafting.",
             [
-                "Do you want to chat generally or work on a complaint?",
-                "Do you want help writing or improving some text?",
-                "Do you want me to explain how the complaint portal works?",
+                "Do you want normal chat or complaint help?",
+                "Do you want help writing something?",
+                "Do you want me to explain the portal quickly?",
             ],
         )
     if any(token in text for token in {"thank you", "thanks"}):
         return (
-            "You are welcome. I can keep chatting generally, or help with complaint filing, tracking, and evidence guidance whenever you want.",
+            "You're welcome. I can keep chatting, or help you file, track, or improve a complaint.",
             [
-                "Do you want to ask a general question?",
-                "Do you want help filing a complaint next?",
+                "Do you want to ask something else?",
+                "Do you want help with a complaint next?",
             ],
         )
     if any(token in text for token in {"bye", "goodbye"}):
         return (
-            "Glad I could help. Come back anytime if you want general guidance or complaint support.",
+            "Glad I could help. Come back anytime if you need support.",
             [
                 "Do you want a quick summary before you go?",
             ],
         )
     return (
-        "I can be both a general chatbot and a complaint helper. I can chat normally, explain things simply, help you write or improve text, brainstorm options, and also help with filing, tracking, and refining complaints.",
+        "I can chat normally and I can help with complaints too. I can explain things simply, help you write clearly, and guide you through filing or tracking a complaint.",
         [
-            "Do you want general help with something right now?",
-            "Do you want complaint support instead?",
-            "Do you want me to explain what I can do in each mode?",
+            "Do you want general help right now?",
+            "Do you want complaint help instead?",
+            "Do you want a quick overview of what I can do?",
+        ],
+    )
+
+
+def _format_category_list() -> str:
+    categories = _dataset_category_names()
+    if not categories:
+        return "I could not load the category list from the dataset right now."
+    return "Here are the complaint categories:\n- " + "\n- ".join(categories)
+
+
+def _priority_policy_response() -> tuple[str, list[str]]:
+    return (
+        "Yes. We use three priority levels:\n- High: safety risks, harassment, urgent service breakdowns, or issues seriously affecting studies\n- Medium: important issues that need attention soon but are not critical right now\n- Low: routine issues, minor delays, or general service requests",
+        [
+            "Do you want me to tell you which priority your issue may fall under?",
+            "Do you want help writing an urgent complaint clearly?",
         ],
     )
 
@@ -1356,10 +2522,15 @@ def _build_chatbot_prompt(
     analysis_preview: dict[str, Any] | None,
 ) -> str:
     sections = [
-        "You are CampusVoice Assistant, a friendly general-purpose AI assistant and complaint portal helper.",
-        "Answer naturally and directly.",
+        "You are CampusVoice Assistant, a warm, emotionally aware assistant for a student complaint portal.",
+        "Write in plain, natural English.",
+        "Keep the reply short, clear, and supportive.",
+        "Do not use markdown, stars, bold markers, or headings.",
+        "Use short dash bullets only if the user explicitly asks for a list, categories, options, or steps.",
+        "Do not use phrases like 'acceptable complaints cover' or long policy-style explanations unless asked.",
+        "Acknowledge the user's feeling when appropriate, but do it briefly and naturally.",
+        "Prefer 2 to 5 short sentences.",
         "If the user asks a general question, answer it normally.",
-        "If the user asks for current live data like weather or breaking news, clearly say you do not have live data.",
         "If complaint portal context is provided, use it only when relevant.",
         f"Detected mode: {intent}",
     ]
@@ -1419,8 +2590,8 @@ def _fetch_status_summary(user_id: str) -> dict[str, int]:
             cur.execute(
                 """
                 SELECT COUNT(*) AS total,
-                       COUNT(*) FILTER (WHERE status = 'pending') AS pending,
-                       COUNT(*) FILTER (WHERE status = 'in-progress') AS in_progress,
+                       COUNT(*) FILTER (WHERE status IN ('submitted', 'pending')) AS pending,
+                       COUNT(*) FILTER (WHERE status = 'in_progress') AS in_progress,
                        COUNT(*) FILTER (WHERE status = 'resolved') AS resolved,
                        COUNT(*) FILTER (WHERE status = 'rejected') AS rejected
                 FROM complaints
@@ -1558,13 +2729,12 @@ def _build_follow_up_questions(message: str, analysis: dict[str, Any]) -> list[s
 def _registration_guidance(message: str) -> tuple[str, list[str], str | None]:
     generic_title = _build_suggested_title(message, "")
     return (
-        "To register a complaint, open Submit Complaint, add a short title, describe what happened, "
-        "and attach photo, document, or voice evidence if you have it. After submission, the system "
-        "will suggest category, priority, and department automatically.",
+        "Go to Submit Complaint, add a short title, explain what happened, and attach photo, document, or voice evidence if you have it. "
+        "After you submit it, the system can suggest the category, priority, and department.",
         [
-            "Do you want a ready-to-use complaint template?",
-            "Do you want help choosing the best title for your complaint?",
-            "Do you want to know what evidence is most useful to upload?",
+            "Do you want a simple complaint template?",
+            "Do you want help choosing a better title?",
+            "Do you want to know what evidence helps most?",
         ],
         generic_title if generic_title and generic_title.lower() != message.strip().lower() else None,
     )
@@ -1590,37 +2760,37 @@ def _compose_analysis_driven_reply(
         if priority == "high" or urgency_score >= 0.75
         else "This looks moderately urgent."
         if priority == "medium"
-        else "This does not look highly urgent right now."
+        else "This does not seem highly urgent right now."
     )
     duplicate_phrase = ""
     if isinstance(duplicate, dict) and duplicate.get("matches"):
         top = duplicate["matches"][0]
         duplicate_phrase = (
-            f" I also found a similar complaint titled '{top.get('title', 'N/A')}' with similarity {float(top.get('score', 0.0)):.2f}."
+            f" I also found a similar complaint: '{top.get('title', 'N/A')}'."
         )
 
     if intent in {"registration", "complaint_coaching", "general_help", "evidence_help"}:
         core = (
-            f"This complaint most likely fits the category '{label}' and should go to {department}. "
-            f"Priority looks '{priority}'. {urgency_phrase} A strong title would be '{suggested_title}'.{duplicate_phrase}"
+            f"This issue most likely fits '{label}' and should go to {department}. "
+            f"The priority looks '{priority}'. {urgency_phrase} A clear title could be '{suggested_title}'.{duplicate_phrase}"
         )
     elif intent == "duplicate_check":
         core = (
-            f"Based on your text, the issue still looks like '{label}' and should route to {department}. "
-            f"Priority looks '{priority}'.{duplicate_phrase or ' I did not find a strong duplicate.'}"
+            f"Your issue still looks like '{label}' and should go to {department}. "
+            f"The priority looks '{priority}'.{duplicate_phrase or ' I did not find a strong duplicate.'}"
         )
     elif intent == "recommendation_help":
         recommendation = ""
         recs = analysis.get("recommendations", []) if isinstance(analysis, dict) else []
         if recs:
-            recommendation = f" Recommended action: {recs[0].get('suggested_action', '')}"
+            recommendation = f" Best next step: {recs[0].get('suggested_action', '')}"
         core = (
-            f"This looks like a '{label}' complaint for {department} with '{priority}' priority.{recommendation}"
+            f"This looks like a '{label}' issue for {department} with '{priority}' priority.{recommendation}"
         )
     else:
         core = (
-            f"Your issue reads like '{label}' and would likely be handled by {department}. "
-            f"Priority looks '{priority}'."
+            f"Your issue looks like '{label}' and would likely be handled by {department}. "
+            f"The priority looks '{priority}'."
         )
     return core, follow_ups, suggested_title
 
@@ -1656,6 +2826,8 @@ def predict_one(text: str):
     if label == "Unknown":
         # Avoid persisting Unknown for obvious complaint keywords.
         label = _recover_unknown_label(text, raw_label)
+    if label in {"Unknown", "Other", "Uncategorized"} or lconf < 0.7:
+        label = _recover_fuzzy_category_label(text, label)
     if pconf < PRIO_THRESHOLD and priority.strip().lower() not in {"low", "medium", "high"}:
         priority = "medium"
     if priority.strip().lower() not in {"low", "medium", "high"}:
@@ -1720,6 +2892,195 @@ def health_dependencies():
     return deps
 
 
+@app.get("/me/access", response_model=AccessProfileResponse)
+def get_my_access_profile(current_user: CurrentUser = Depends(get_current_user)):
+    pending_rows = _list_pending_invites_for_email(current_user.email)
+    return AccessProfileResponse(
+        user_id=current_user.user_id,
+        email=current_user.email,
+        role=current_user.role,
+        is_admin=current_user.is_admin,
+        is_super_admin=current_user.is_super_admin,
+        pending_invites=[AdminAccessRecord(**item) for item in pending_rows],
+    )
+
+
+@app.get("/super-admin/admin-users", response_model=list[AdminAccessRecord])
+def list_admin_users(super_admin: CurrentUser = Depends(require_super_admin)):
+    del super_admin
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            _ensure_admin_access_tables(cur)
+            cur.execute(
+                """
+                SELECT id, email, role, status, invite_token, invite_expires_at, invited_by,
+                       accepted_by_user_id, accepted_at, created_at, updated_at
+                FROM admin_users
+                ORDER BY
+                    CASE role WHEN 'super_admin' THEN 0 ELSE 1 END,
+                    CASE status WHEN 'active' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END,
+                    created_at DESC
+                """
+            )
+            rows = cur.fetchall()
+    return [AdminAccessRecord(**_serialize_admin_access_row(row)) for row in rows]
+
+
+@app.post("/super-admin/admin-users/invite", response_model=AdminAccessRecord, status_code=201)
+def invite_admin_user(
+    payload: AdminInviteRequest,
+    super_admin: CurrentUser = Depends(require_super_admin),
+):
+    normalized_email = str(payload.email or "").strip().lower()
+    if not normalized_email:
+        raise HTTPException(status_code=400, detail="Email is required")
+    role = _normalize_admin_role(payload.role)
+    if role not in {"admin", "super_admin"}:
+        raise HTTPException(status_code=400, detail="Role must be admin or super_admin")
+
+    invite_token = uuid.uuid4().hex
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            _ensure_admin_access_tables(cur)
+            cur.execute(
+                """
+                INSERT INTO admin_users (
+                    id, email, role, status, invite_token, invite_expires_at, invited_by
+                )
+                VALUES (%s::uuid, %s, %s, 'pending', %s, %s, %s)
+                ON CONFLICT (email) DO UPDATE SET
+                    role = EXCLUDED.role,
+                    status = 'pending',
+                    invite_token = EXCLUDED.invite_token,
+                    invite_expires_at = EXCLUDED.invite_expires_at,
+                    invited_by = EXCLUDED.invited_by,
+                    accepted_by_user_id = NULL,
+                    accepted_at = NULL
+                RETURNING id, email, role, status, invite_token, invite_expires_at, invited_by,
+                          accepted_by_user_id, accepted_at, created_at, updated_at
+                """,
+                (
+                    str(uuid.uuid4()),
+                    normalized_email,
+                    role,
+                    invite_token,
+                    expires_at,
+                    super_admin.email or super_admin.user_id,
+                ),
+            )
+            row = cur.fetchone()
+        conn.commit()
+    return AdminAccessRecord(**_serialize_admin_access_row(row))
+
+
+@app.post("/admin-access/accept-invite", response_model=AdminAccessRecord)
+def accept_admin_invite(
+    payload: AdminInviteAcceptRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    token = str(payload.token or "").strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Invite token is required")
+    if not current_user.email:
+        raise HTTPException(status_code=400, detail="Signed-in account is missing an email address")
+
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            _ensure_admin_access_tables(cur)
+            cur.execute(
+                """
+                SELECT id, email, role, status, invite_token, invite_expires_at, invited_by,
+                       accepted_by_user_id, accepted_at, created_at, updated_at
+                FROM admin_users
+                WHERE invite_token = %s
+                """,
+                (token,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Invite not found")
+            if str(row.get("email") or "").strip().lower() != current_user.email.strip().lower():
+                raise HTTPException(
+                    status_code=403,
+                    detail="This invite is tied to a different email address",
+                )
+            if _normalize_admin_status(row.get("status")) != "pending":
+                raise HTTPException(status_code=400, detail="This invite is no longer pending")
+            expires_at = row.get("invite_expires_at")
+            if isinstance(expires_at, datetime) and expires_at < datetime.now(timezone.utc):
+                raise HTTPException(status_code=400, detail="This invite has expired")
+
+            cur.execute(
+                """
+                UPDATE admin_users
+                SET status = 'active',
+                    accepted_by_user_id = %s,
+                    accepted_at = NOW(),
+                    invite_token = NULL,
+                    invite_expires_at = NULL
+                WHERE id = %s::uuid
+                RETURNING id, email, role, status, invite_token, invite_expires_at, invited_by,
+                          accepted_by_user_id, accepted_at, created_at, updated_at
+                """,
+                (current_user.user_id, row["id"]),
+            )
+            updated = cur.fetchone()
+        conn.commit()
+    return AdminAccessRecord(**_serialize_admin_access_row(updated))
+
+
+@app.patch("/super-admin/admin-users/{access_id}", response_model=AdminAccessRecord)
+def update_admin_user_access(
+    access_id: str,
+    payload: AdminAccessUpdateRequest,
+    super_admin: CurrentUser = Depends(require_super_admin),
+):
+    del super_admin
+    next_role = _normalize_admin_role(payload.role) if payload.role is not None else None
+    next_status = _normalize_admin_status(payload.status) if payload.status is not None else None
+    if next_role is None and next_status is None:
+        raise HTTPException(status_code=400, detail="Provide at least one field to update")
+    if next_role is not None and next_role not in {"admin", "super_admin"}:
+        raise HTTPException(status_code=400, detail="Role must be admin or super_admin")
+
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            _ensure_admin_access_tables(cur)
+            cur.execute(
+                """
+                SELECT id, email, role, status, invite_token, invite_expires_at, invited_by,
+                       accepted_by_user_id, accepted_at, created_at, updated_at
+                FROM admin_users
+                WHERE id = %s::uuid
+                """,
+                (access_id,),
+            )
+            existing = cur.fetchone()
+            if not existing:
+                raise HTTPException(status_code=404, detail="Admin access record not found")
+
+            role_value = next_role or _normalize_admin_role(existing.get("role"))
+            status_value = next_status or _normalize_admin_status(existing.get("status"))
+            clear_invite = status_value == "active"
+            cur.execute(
+                """
+                UPDATE admin_users
+                SET role = %s,
+                    status = %s,
+                    invite_token = CASE WHEN %s THEN NULL ELSE invite_token END,
+                    invite_expires_at = CASE WHEN %s THEN NULL ELSE invite_expires_at END
+                WHERE id = %s::uuid
+                RETURNING id, email, role, status, invite_token, invite_expires_at, invited_by,
+                          accepted_by_user_id, accepted_at, created_at, updated_at
+                """,
+                (role_value, status_value, clear_invite, clear_invite, access_id),
+            )
+            updated = cur.fetchone()
+        conn.commit()
+    return AdminAccessRecord(**_serialize_admin_access_row(updated))
+
+
 @app.on_event("startup")
 def startup_checks() -> None:
     _sync_models_on_startup()
@@ -1747,28 +3108,251 @@ def analyze_complaint(
 
 
 @app.get("/complaints")
-def list_complaints(current_user: CurrentUser = Depends(get_current_user)):
+def list_complaints(
+    status: str | None = None,
+    category: str | None = None,
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    filters = ["user_id = %s"]
+    params: list[Any] = [current_user.user_id]
+
+    if status:
+        normalized_status = _normalize_status_input(status)
+        if normalized_status == "pending":
+            filters.append("status IN ('submitted', 'pending')")
+        else:
+            filters.append("status = %s")
+            params.append(normalized_status)
+
+    if category and category.strip().lower() != "all":
+        filters.append("category = %s")
+        params.append(category.strip())
+
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT id, user_id, title, description, category, priority, department, status,
+                       is_anonymous, attachments, evidence_types, analysis, source_language,
+                       decision_state, risk_score, routing_confidence, decision_source, decision_reason,
+                       fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version,
+                       last_student_update_at, last_public_admin_update_at, last_user_viewed_updates_at, last_admin_viewed_updates_at,
+                       resolution_summary, reopened_at, reopen_count,
+                       submitted_at, pending_at, in_progress_at, resolved_at, created_at, updated_at
+                FROM complaints
+                WHERE {" AND ".join(filters)}
+                ORDER BY created_at DESC
+                """,
+                tuple(params),
+            )
+            rows = cur.fetchall()
+    return [_serialize_user_row(row) for row in rows]
+
+
+@app.get("/complaints/{complaint_id}")
+def get_complaint_detail(
+    complaint_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+):
     with get_db_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
                 SELECT id, user_id, title, description, category, priority, department, status,
-                       attachments, evidence_types, analysis, source_language, created_at, updated_at
+                       is_anonymous, attachments, evidence_types, analysis, source_language,
+                       decision_state, risk_score, routing_confidence, decision_source, decision_reason,
+                       fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version,
+                       last_student_update_at, last_public_admin_update_at, last_user_viewed_updates_at, last_admin_viewed_updates_at,
+                       resolution_summary, reopened_at, reopen_count,
+                       submitted_at, pending_at, in_progress_at, resolved_at, created_at, updated_at
                 FROM complaints
-                WHERE user_id = %s
-                ORDER BY created_at DESC
+                WHERE id = %s::uuid AND user_id = %s
                 """,
-                (current_user.user_id,),
+                (complaint_id, current_user.user_id),
+            )
+            row = cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+
+    return _serialize_user_row(row)
+
+
+@app.get("/complaints/{complaint_id}/updates")
+def list_complaint_updates(
+    complaint_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT 1
+                FROM complaints
+                WHERE id = %s::uuid AND user_id = %s
+                """,
+                (complaint_id, current_user.user_id),
+            )
+            complaint = cur.fetchone()
+            if not complaint:
+                raise HTTPException(status_code=404, detail="Complaint not found")
+
+            cur.execute(
+                """
+                UPDATE complaints
+                SET last_user_viewed_updates_at = NOW()
+                WHERE id = %s::uuid
+                """,
+                (complaint_id,),
+            )
+
+            cur.execute(
+                """
+                SELECT id, complaint_id, author_role, author_id, body, is_internal, created_at
+                FROM complaint_updates
+                WHERE complaint_id = %s::uuid
+                  AND is_internal = FALSE
+                ORDER BY created_at ASC
+                """,
+                (complaint_id,),
             )
             rows = cur.fetchall()
-    return [_serialize_row(row) for row in rows]
+    return [_serialize_update_row(row) for row in rows]
+
+
+@app.post("/complaints/{complaint_id}/updates", status_code=201)
+def create_complaint_update(
+    complaint_id: str,
+    payload: ComplaintUpdateCreate,
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="Update message is required")
+
+    update_id = str(uuid.uuid4())
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id
+                FROM complaints
+                WHERE id = %s::uuid AND user_id = %s
+                """,
+                (complaint_id, current_user.user_id),
+            )
+            complaint = cur.fetchone()
+            if not complaint:
+                raise HTTPException(status_code=404, detail="Complaint not found")
+
+            cur.execute(
+                """
+                INSERT INTO complaint_updates (
+                  id, complaint_id, author_role, author_id, body, is_internal
+                ) VALUES (
+                  %s::uuid, %s::uuid, %s, %s, %s, FALSE
+                )
+                RETURNING id, complaint_id, author_role, author_id, body, is_internal, created_at
+                """,
+                (update_id, complaint_id, "student", current_user.user_id, body),
+            )
+            row = cur.fetchone()
+            cur.execute(
+                """
+                UPDATE complaints
+                SET last_student_update_at = NOW()
+                WHERE id = %s::uuid
+                """,
+                (complaint_id,),
+            )
+        conn.commit()
+    return _serialize_update_row(row)
+
+
+@app.post("/complaints/{complaint_id}/reopen")
+def reopen_complaint(
+    complaint_id: str,
+    payload: ComplaintReopenRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    reason = payload.reason.strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="Reopen reason is required")
+
+    update_id = str(uuid.uuid4())
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, status
+                FROM complaints
+                WHERE id = %s::uuid AND user_id = %s
+                """,
+                (complaint_id, current_user.user_id),
+            )
+            complaint = cur.fetchone()
+            if not complaint:
+                raise HTTPException(status_code=404, detail="Complaint not found")
+            if str(complaint.get("status")) != "resolved":
+                raise HTTPException(status_code=400, detail="Only resolved complaints can be reopened")
+
+            cur.execute(
+                """
+                UPDATE complaints
+                SET status = 'pending',
+                    decision_state = 'reopened',
+                    requires_human_review = FALSE,
+                    reopened_at = NOW(),
+                    reopen_count = COALESCE(reopen_count, 0) + 1,
+                    pending_at = NOW(),
+                    last_student_update_at = NOW()
+                WHERE id = %s::uuid
+                RETURNING id, user_id, title, description, category, priority, department, status,
+                          assigned_to, admin_notes, is_anonymous, attachments, evidence_types, analysis, source_language,
+                          decision_state, risk_score, routing_confidence, decision_source, decision_reason,
+                          fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version,
+                          last_student_update_at, last_public_admin_update_at, last_user_viewed_updates_at, last_admin_viewed_updates_at,
+                          resolution_summary, reopened_at, reopen_count,
+                          submitted_at, pending_at, in_progress_at, resolved_at, created_at, updated_at
+                """,
+                (complaint_id,),
+            )
+            row = cur.fetchone()
+            _write_complaint_audit_log(
+                cur,
+                complaint_id=complaint_id,
+                actor_type="student",
+                actor_id=current_user.user_id,
+                event_type="complaint_reopened",
+                previous_state={"status": "resolved", "decision_state": "resolved"},
+                new_state={"status": "pending", "decision_state": "reopened"},
+                reason={"reopen_reason": reason},
+            )
+
+            cur.execute(
+                """
+                INSERT INTO complaint_updates (
+                  id, complaint_id, author_role, author_id, body, is_internal
+                ) VALUES (
+                  %s::uuid, %s::uuid, %s, %s, %s, FALSE
+                )
+                """,
+                (
+                    update_id,
+                    complaint_id,
+                    "student",
+                    current_user.user_id,
+                    f"Complaint reopened: {reason}",
+                ),
+            )
+        conn.commit()
+
+    return _serialize_user_row(row)
 
 
 @app.post("/complaints", status_code=201)
 def create_complaint(payload: ComplaintCreate, current_user: CurrentUser = Depends(get_current_user)):
     priority = payload.priority.lower().strip()
-    # User-submitted complaints always start in pending until admin approves.
-    status_value = "pending"
     if priority not in {"low", "medium", "high"}:
         raise HTTPException(status_code=400, detail="priority must be low, medium, or high")
 
@@ -1782,6 +3366,15 @@ def create_complaint(payload: ComplaintCreate, current_user: CurrentUser = Depen
         )
     if payload.source_language:
         merged_analysis["source_language"] = payload.source_language
+    merged_analysis["attachment_checks"] = _attachment_metadata_analysis(
+        payload.attachments,
+        payload.evidence_types,
+    )
+    submission_guard = merged_analysis.get("submission_guard", {})
+    if isinstance(submission_guard, dict) and not bool(submission_guard.get("allow_submission", True)):
+        reasons = submission_guard.get("reasons", [])
+        detail = reasons[0] if isinstance(reasons, list) and reasons else "Complaint could not be submitted."
+        raise HTTPException(status_code=400, detail=str(detail))
 
     classification = merged_analysis.get("classification", {}) if isinstance(merged_analysis, dict) else {}
     if not isinstance(classification, dict):
@@ -1795,6 +3388,13 @@ def create_complaint(payload: ComplaintCreate, current_user: CurrentUser = Depen
         if predicted_category and predicted_category.lower() not in {"unknown", "uncategorized"}
         else (payload.category or "Uncategorized").strip()
     )
+    automation = _build_automation_decision(
+        analysis=merged_analysis,
+        fallback_priority=predicted_priority,
+        fallback_category=category_to_store,
+        is_anonymous=bool(payload.is_anonymous),
+    )
+    status_value = str(automation["status"])
 
     complaint_id = str(uuid.uuid4())
     with get_db_conn() as conn:
@@ -1803,12 +3403,21 @@ def create_complaint(payload: ComplaintCreate, current_user: CurrentUser = Depen
                 """
                 INSERT INTO complaints (
                   id, user_id, title, description, category, priority, department, status,
-                  attachments, evidence_types, analysis, source_language
+                  is_anonymous, attachments, evidence_types, analysis, source_language,
+                  submitted_at, pending_at, last_student_update_at,
+                  decision_state, risk_score, routing_confidence, decision_source, decision_reason,
+                  fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version
                 ) VALUES (
-                  %s::uuid, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                  %s::uuid, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                  %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 RETURNING id, user_id, title, description, category, priority, department, status,
-                          attachments, evidence_types, analysis, source_language, created_at, updated_at
+                          is_anonymous, attachments, evidence_types, analysis, source_language,
+                          decision_state, risk_score, routing_confidence, decision_source, decision_reason,
+                          fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version,
+                          last_student_update_at, last_public_admin_update_at, last_user_viewed_updates_at, last_admin_viewed_updates_at,
+                          resolution_summary, reopened_at, reopen_count,
+                          submitted_at, pending_at, in_progress_at, resolved_at, created_at, updated_at
                 """,
                 (
                     complaint_id,
@@ -1819,13 +3428,45 @@ def create_complaint(payload: ComplaintCreate, current_user: CurrentUser = Depen
                     predicted_priority,
                     classification.get("department"),
                     status_value,
+                    bool(payload.is_anonymous),
                     Json(payload.attachments),
                     Json(payload.evidence_types),
                     Json(merged_analysis),
                     payload.source_language or merged_analysis.get("source_language"),
+                    datetime.now(timezone.utc),
+                    datetime.now(timezone.utc) if status_value == "pending" else None,
+                    datetime.now(timezone.utc),
+                    automation["decision_state"],
+                    automation["risk_score"],
+                    automation["routing_confidence"],
+                    automation["decision_source"],
+                    Json(automation["decision_reason"]),
+                    Json(automation["fairness_flags"]),
+                    automation["requires_human_review"],
+                    automation["escalation_level"],
+                    automation["sla_due_at"],
+                    automation["quarantined_reason"],
+                    automation["auto_route_version"],
                 ),
             )
             row = cur.fetchone()
+            _write_complaint_audit_log(
+                cur,
+                complaint_id=complaint_id,
+                actor_type="system",
+                actor_id=current_user.user_id,
+                event_type="automation_intake",
+                previous_state={},
+                new_state={
+                    "status": status_value,
+                    "decision_state": automation["decision_state"],
+                    "department": automation["department"],
+                    "priority": automation["priority"],
+                },
+                reason=automation["decision_reason"],
+                model_version=str(settings.backbone_model_name),
+                rule_version=str(automation["auto_route_version"]),
+            )
         conn.commit()
 
     # If frontend provides category/priority, capture as supervised feedback.
@@ -1838,7 +3479,7 @@ def create_complaint(payload: ComplaintCreate, current_user: CurrentUser = Depen
     ):
         _maybe_trigger_auto_retrain()
 
-    return _serialize_row(row)
+    return _serialize_user_row(row)
 
 
 @app.post("/admin/complaints/{complaint_id}/approve")
@@ -1846,20 +3487,55 @@ def approve_complaint(
     complaint_id: str,
     admin_user: CurrentUser = Depends(require_admin),
 ):
-    del admin_user
     with get_db_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
+                SELECT status, decision_state
+                FROM complaints
+                WHERE id = %s::uuid
+                """,
+                (complaint_id,),
+            )
+            previous_row = cur.fetchone()
+            cur.execute(
+                """
                 UPDATE complaints
-                SET status = 'in-progress'
+                SET status = 'pending',
+                    decision_state = CASE
+                      WHEN decision_state = 'quarantined' THEN 'in_review'
+                      ELSE 'routed'
+                    END,
+                    requires_human_review = FALSE,
+                    pending_at = COALESCE(pending_at, NOW())
                 WHERE id = %s::uuid
                 RETURNING id, user_id, title, description, category, priority, department, status,
-                          attachments, evidence_types, analysis, source_language, created_at, updated_at
+                          assigned_to, admin_notes, is_anonymous, attachments, evidence_types, analysis, source_language,
+                          decision_state, risk_score, routing_confidence, decision_source, decision_reason,
+                          fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version,
+                          submitted_at, pending_at, in_progress_at, resolved_at, created_at, updated_at
                 """,
                 (complaint_id,),
             )
             row = cur.fetchone()
+            if row:
+                _write_complaint_audit_log(
+                    cur,
+                    complaint_id=complaint_id,
+                    actor_type="admin",
+                    actor_id=admin_user.email or admin_user.user_id,
+                    event_type="manual_route_override",
+                    previous_state={
+                        "status": previous_row.get("status") if previous_row else None,
+                        "decision_state": previous_row.get("decision_state") if previous_row else None,
+                    },
+                    new_state={
+                        "status": row.get("status"),
+                        "decision_state": row.get("decision_state"),
+                    },
+                    reason={"message": "Admin moved complaint into active routed queue."},
+                    rule_version="rules-v1",
+                )
         conn.commit()
 
     if not row:
@@ -1875,8 +3551,9 @@ def create_presigned_upload(
     if not payload.fileName.strip():
         raise HTTPException(status_code=400, detail="fileName is required")
     _require_env_for_uploads()
+    validation = _validate_upload_request(payload.fileName, payload.contentType or "application/octet-stream", payload.fileSize)
 
-    key = f"attachments/{current_user.user_id}/{uuid.uuid4()}-{_sanitize_filename(payload.fileName)}"
+    key = f"attachments/{current_user.user_id}/{uuid.uuid4()}-{validation['file_name']}"
     upload_url = s3_client.generate_presigned_url(
         "put_object",
         Params={
@@ -1890,6 +3567,7 @@ def create_presigned_upload(
         "uploadUrl": upload_url,
         "key": key,
         "expiresIn": settings.presigned_url_expires_seconds,
+        "warnings": validation["warnings"],
     }
 
 
@@ -1925,20 +3603,112 @@ def create_presigned_download(
 
 
 @app.get("/admin/complaints")
-def list_all_complaints(admin_user: CurrentUser = Depends(require_admin)):
+def list_all_complaints(
+    status: str | None = None,
+    department: str | None = None,
+    assigned_to: str | None = None,
+    review_state: str | None = None,
+    q: str | None = None,
+    admin_user: CurrentUser = Depends(require_admin),
+):
     del admin_user
+    filters, params = _build_admin_complaint_filters(
+        status=status,
+        department=department,
+        assigned_to=assigned_to,
+        review_state=review_state,
+        q=q,
+    )
+    where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+
     with get_db_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                """
+                f"""
                 SELECT id, user_id, title, description, category, priority, department, status,
-                       attachments, evidence_types, analysis, source_language, created_at, updated_at
+                       assigned_to, admin_notes, is_anonymous, attachments, evidence_types, analysis, source_language,
+                       decision_state, risk_score, routing_confidence, decision_source, decision_reason,
+                       fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version,
+                       last_student_update_at, last_public_admin_update_at, last_user_viewed_updates_at, last_admin_viewed_updates_at,
+                       resolution_summary, reopened_at, reopen_count,
+                       submitted_at, pending_at, in_progress_at, resolved_at, created_at, updated_at
                 FROM complaints
+                {where_clause}
                 ORDER BY created_at DESC
-                """
+                """,
+                tuple(params),
             )
             rows = cur.fetchall()
     return [_serialize_row(row) for row in rows]
+
+
+@app.get("/admin/reports/complaints")
+def export_complaints_report(
+    format: str = "csv",
+    status: str | None = None,
+    department: str | None = None,
+    assigned_to: str | None = None,
+    review_state: str | None = None,
+    q: str | None = None,
+    admin_user: CurrentUser = Depends(require_admin),
+):
+    del admin_user
+    filters, params = _build_admin_complaint_filters(
+        status=status,
+        department=department,
+        assigned_to=assigned_to,
+        review_state=review_state,
+        q=q,
+    )
+    where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT id, title, category, priority, department, assigned_to, status,
+                       is_anonymous, reopen_count,
+                       submitted_at, pending_at, in_progress_at, resolved_at, created_at, updated_at
+                FROM complaints
+                {where_clause}
+                ORDER BY created_at DESC
+                """,
+                tuple(params),
+            )
+            rows = cur.fetchall()
+
+    report_rows = [_complaint_report_row(row) for row in rows]
+    export_format = format.strip().lower()
+    if export_format == "json":
+        return {"items": report_rows, "count": len(report_rows)}
+    if export_format != "csv":
+        raise HTTPException(status_code=400, detail="format must be csv or json")
+
+    output = io.StringIO()
+    fieldnames = [
+        "id",
+        "title",
+        "category",
+        "priority",
+        "department",
+        "assigned_to",
+        "status",
+        "is_anonymous",
+        "reopen_count",
+        "submitted_at",
+        "pending_at",
+        "in_progress_at",
+        "resolved_at",
+        "created_at",
+        "updated_at",
+    ]
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(report_rows)
+    return PlainTextResponse(
+        output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="campusvoice-complaints-report.csv"'},
+    )
 
 
 @app.post("/admin/complaints/{complaint_id}/predict")
@@ -1960,6 +3730,115 @@ def predict_complaint(complaint_id: str, admin_user: CurrentUser = Depends(requi
 
     prediction = _analyze_text_bundle(row["title"], row["description"])
     return prediction
+
+
+@app.get("/admin/complaints/{complaint_id}/updates")
+def list_admin_complaint_updates(
+    complaint_id: str,
+    admin_user: CurrentUser = Depends(require_admin),
+):
+    del admin_user
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT 1
+                FROM complaints
+                WHERE id = %s::uuid
+                """,
+                (complaint_id,),
+            )
+            complaint = cur.fetchone()
+            if not complaint:
+                raise HTTPException(status_code=404, detail="Complaint not found")
+
+            cur.execute(
+                """
+                UPDATE complaints
+                SET last_admin_viewed_updates_at = NOW()
+                WHERE id = %s::uuid
+                """,
+                (complaint_id,),
+            )
+
+            cur.execute(
+                """
+                SELECT id, complaint_id, author_role, author_id, body, is_internal, created_at
+                FROM complaint_updates
+                WHERE complaint_id = %s::uuid
+                ORDER BY created_at ASC
+                """,
+                (complaint_id,),
+            )
+            rows = cur.fetchall()
+    return [_serialize_update_row(row) for row in rows]
+
+
+@app.post("/admin/complaints/{complaint_id}/updates", status_code=201)
+def create_admin_complaint_update(
+    complaint_id: str,
+    payload: AdminComplaintUpdateCreate,
+    admin_user: CurrentUser = Depends(require_admin),
+):
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(status_code=400, detail="Update message is required")
+
+    update_id = str(uuid.uuid4())
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id
+                FROM complaints
+                WHERE id = %s::uuid
+                """,
+                (complaint_id,),
+            )
+            complaint = cur.fetchone()
+            if not complaint:
+                raise HTTPException(status_code=404, detail="Complaint not found")
+
+            cur.execute(
+                """
+                INSERT INTO complaint_updates (
+                  id, complaint_id, author_role, author_id, body, is_internal
+                ) VALUES (
+                  %s::uuid, %s::uuid, %s, %s, %s, %s
+                )
+                RETURNING id, complaint_id, author_role, author_id, body, is_internal, created_at
+                """,
+                (
+                    update_id,
+                    complaint_id,
+                    "admin",
+                    admin_user.email or admin_user.user_id,
+                    body,
+                    bool(payload.is_internal),
+                ),
+            )
+            row = cur.fetchone()
+            if payload.is_internal:
+                cur.execute(
+                    """
+                    UPDATE complaints
+                    SET last_admin_viewed_updates_at = NOW()
+                    WHERE id = %s::uuid
+                    """,
+                    (complaint_id,),
+                )
+            else:
+                cur.execute(
+                    """
+                    UPDATE complaints
+                    SET last_public_admin_update_at = NOW(),
+                        last_admin_viewed_updates_at = NOW()
+                    WHERE id = %s::uuid
+                    """,
+                    (complaint_id,),
+                )
+        conn.commit()
+    return _serialize_update_row(row)
 
 
 @app.post("/admin/complaints/{complaint_id}/auto-apply")
@@ -1990,23 +3869,64 @@ def auto_apply_prediction(
                     status_code=503,
                     detail=f"Model unavailable during auto-apply: {exc}",
                 ) from exc
+            automation = _build_automation_decision(
+                analysis=prediction_bundle,
+                fallback_priority=str(prediction.get("priority") or "medium").lower(),
+                fallback_category=str(prediction.get("label") or "Uncategorized"),
+                is_anonymous=False,
+            )
             cur.execute(
                 """
                 UPDATE complaints
-                SET category = %s, priority = %s, department = %s, analysis = %s
+                SET category = %s, priority = %s, department = %s, analysis = %s,
+                    decision_state = %s, risk_score = %s, routing_confidence = %s, decision_source = %s,
+                    decision_reason = %s, fairness_flags = %s, requires_human_review = %s,
+                    escalation_level = %s, sla_due_at = %s, quarantined_reason = %s, auto_route_version = %s
                 WHERE id = %s::uuid
                 RETURNING id, user_id, title, description, category, priority, department, status,
-                          attachments, evidence_types, analysis, source_language, created_at, updated_at
+                          assigned_to, admin_notes, is_anonymous, attachments, evidence_types, analysis, source_language,
+                          decision_state, risk_score, routing_confidence, decision_source, decision_reason,
+                          fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version,
+                          last_student_update_at, last_public_admin_update_at, last_user_viewed_updates_at, last_admin_viewed_updates_at,
+                          submitted_at, pending_at, in_progress_at, resolved_at, created_at, updated_at
                 """,
                 (
                     prediction["label"],
                     str(prediction["priority"]).lower(),
                     prediction["department"],
                     Json(prediction_bundle),
+                    automation["decision_state"],
+                    automation["risk_score"],
+                    automation["routing_confidence"],
+                    automation["decision_source"],
+                    Json(automation["decision_reason"]),
+                    Json(automation["fairness_flags"]),
+                    automation["requires_human_review"],
+                    automation["escalation_level"],
+                    automation["sla_due_at"],
+                    automation["quarantined_reason"],
+                    automation["auto_route_version"],
                     complaint_id,
                 ),
             )
             updated = cur.fetchone()
+            _write_complaint_audit_log(
+                cur,
+                complaint_id=complaint_id,
+                actor_type="system",
+                actor_id=admin_user.email or admin_user.user_id,
+                event_type="automation_refreshed",
+                previous_state={},
+                new_state={
+                    "category": prediction["label"],
+                    "priority": str(prediction["priority"]).lower(),
+                    "department": prediction["department"],
+                    "decision_state": automation["decision_state"],
+                },
+                reason=automation["decision_reason"],
+                model_version=str(settings.backbone_model_name),
+                rule_version=str(automation["auto_route_version"]),
+            )
         conn.commit()
 
     return {
@@ -2021,8 +3941,6 @@ def update_complaint_by_admin(
     payload: ComplaintAdminUpdate,
     admin_user: CurrentUser = Depends(require_admin),
 ):
-    del admin_user
-
     fields: list[str] = []
     values: list[Any] = []
     idx = 1
@@ -2042,12 +3960,48 @@ def update_complaint_by_admin(
         fields.append("department = %s")
         values.append(payload.department.strip() or None)
         idx += 1
+    if payload.assigned_to is not None:
+        fields.append("assigned_to = %s")
+        values.append(payload.assigned_to.strip() or None)
+        idx += 1
+    if payload.admin_notes is not None:
+        fields.append("admin_notes = %s")
+        values.append(payload.admin_notes.strip() or None)
+        idx += 1
+    if payload.resolution_summary is not None:
+        fields.append("resolution_summary = %s")
+        values.append(payload.resolution_summary.strip() or None)
+        idx += 1
+    if payload.decision_state is not None:
+        decision_state = payload.decision_state.strip().lower().replace("-", "_")
+        if decision_state not in {"submitted", "auto_classified", "routed", "in_review", "escalated", "resolved", "reopened", "quarantined"}:
+            raise HTTPException(status_code=400, detail="invalid decision_state")
+        fields.append("decision_state = %s")
+        values.append(decision_state)
+        idx += 1
     if payload.status is not None:
         status_value = payload.status.strip().lower()
-        if status_value not in {"pending", "in-progress", "resolved", "rejected"}:
-            raise HTTPException(status_code=400, detail="invalid status")
+        status_value = _normalize_status_input(status_value)
+        if status_value == "resolved" and not (
+            (payload.resolution_summary and payload.resolution_summary.strip())
+            or any(field.startswith("resolution_summary =") for field in fields)
+        ):
+            raise HTTPException(status_code=400, detail="resolution summary is required when resolving a complaint")
         fields.append("status = %s")
         values.append(status_value)
+        if payload.decision_state is None:
+            inferred_decision_state = {
+                "submitted": "submitted",
+                "pending": "routed",
+                "in_progress": "routed",
+                "resolved": "resolved",
+                "rejected": "quarantined",
+            }[status_value]
+            fields.append("decision_state = %s")
+            values.append(inferred_decision_state)
+        timestamp_fields, timestamp_values = _status_timestamp_updates(status_value)
+        fields.extend(timestamp_fields)
+        values.extend(timestamp_values)
         idx += 1
 
     if not fields:
@@ -2058,16 +4012,67 @@ def update_complaint_by_admin(
     with get_db_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
+                """
+                SELECT status, decision_state, assigned_to, department
+                FROM complaints
+                WHERE id = %s::uuid
+                """,
+                (complaint_id,),
+            )
+            previous_row = cur.fetchone()
+            cur.execute(
                 f"""
                 UPDATE complaints
                 SET {", ".join(fields)}
                 WHERE id = %s::uuid
                 RETURNING id, user_id, title, description, category, priority, department, status,
-                          attachments, evidence_types, analysis, source_language, created_at, updated_at
+                          assigned_to, admin_notes, is_anonymous, attachments, evidence_types, analysis, source_language,
+                          decision_state, risk_score, routing_confidence, decision_source, decision_reason,
+                          fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version,
+                          last_student_update_at, last_public_admin_update_at, last_user_viewed_updates_at, last_admin_viewed_updates_at,
+                          resolution_summary, reopened_at, reopen_count,
+                          submitted_at, pending_at, in_progress_at, resolved_at, created_at, updated_at
                 """,
                 tuple(values),
             )
             row = cur.fetchone()
+            if row:
+                _write_complaint_audit_log(
+                    cur,
+                    complaint_id=complaint_id,
+                    actor_type="admin",
+                    actor_id=admin_user.email or admin_user.user_id,
+                    event_type="admin_case_update",
+                    previous_state={
+                        "status": previous_row.get("status") if previous_row else None,
+                        "decision_state": previous_row.get("decision_state") if previous_row else None,
+                        "assigned_to": previous_row.get("assigned_to") if previous_row else None,
+                        "department": previous_row.get("department") if previous_row else None,
+                    },
+                    new_state={
+                        "status": row.get("status"),
+                        "decision_state": row.get("decision_state"),
+                        "assigned_to": row.get("assigned_to"),
+                        "department": row.get("department"),
+                    },
+                    reason={
+                        "fields_updated": [
+                            key
+                            for key, value in {
+                                "category": payload.category,
+                                "priority": payload.priority,
+                                "department": payload.department,
+                                "status": payload.status,
+                                "decision_state": payload.decision_state,
+                                "assigned_to": payload.assigned_to,
+                                "admin_notes": payload.admin_notes,
+                                "resolution_summary": payload.resolution_summary,
+                            }.items()
+                            if value is not None
+                        ]
+                    },
+                    rule_version="rules-v1",
+                )
         conn.commit()
 
     if not row:
@@ -2084,6 +4089,256 @@ def update_complaint_by_admin(
         _maybe_trigger_auto_retrain()
 
     return _serialize_row(row)
+
+
+@app.get("/faq", response_model=list[FAQItem])
+def list_faq():
+    return _FAQ_ITEMS
+
+
+@app.get("/notifications")
+def list_notifications(current_user: CurrentUser = Depends(get_current_user)):
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            if current_user.is_admin:
+                cur.execute(
+                    """
+                    SELECT id, title, category, status, department, priority,
+                           last_student_update_at, last_admin_viewed_updates_at,
+                           assigned_to, submitted_at
+                    FROM complaints
+                    ORDER BY created_at DESC
+                    """
+                )
+                rows = cur.fetchall()
+
+                student_updates = [
+                    _notification_item(
+                        complaint_id=str(row["id"]),
+                        title=str(row.get("title") or "Complaint"),
+                        category=str(row.get("category") or "Uncategorized"),
+                        status_value=str(row.get("status") or "pending"),
+                        timestamp=row.get("last_student_update_at"),
+                        group_key="student_updates",
+                        group_label="New Student Updates",
+                        department=row.get("department"),
+                        priority=row.get("priority"),
+                        preview="A student added a new update.",
+                    )
+                    for row in rows
+                    if isinstance(row.get("last_student_update_at"), datetime)
+                    and (
+                        not isinstance(row.get("last_admin_viewed_updates_at"), datetime)
+                        or row["last_student_update_at"] > row["last_admin_viewed_updates_at"]
+                    )
+                ]
+                awaiting_assignment = [
+                    _notification_item(
+                        complaint_id=str(row["id"]),
+                        title=str(row.get("title") or "Complaint"),
+                        category=str(row.get("category") or "Uncategorized"),
+                        status_value=str(row.get("status") or "pending"),
+                        timestamp=row.get("submitted_at"),
+                        group_key="awaiting_assignment",
+                        group_label="Awaiting Assignment",
+                        department=row.get("department"),
+                        priority=row.get("priority"),
+                        preview="This complaint is active and still unassigned.",
+                    )
+                    for row in rows
+                    if str(row.get("status") or "") in {"submitted", "pending", "in_progress"}
+                    and not str(row.get("assigned_to") or "").strip()
+                    and (
+                        not isinstance(row.get("last_admin_viewed_updates_at"), datetime)
+                        or (
+                            isinstance(row.get("submitted_at"), datetime)
+                            and row["submitted_at"] > row["last_admin_viewed_updates_at"]
+                        )
+                    )
+                ]
+                urgent_queue = [
+                    _notification_item(
+                        complaint_id=str(row["id"]),
+                        title=str(row.get("title") or "Complaint"),
+                        category=str(row.get("category") or "Uncategorized"),
+                        status_value=str(row.get("status") or "pending"),
+                        timestamp=row.get("submitted_at"),
+                        group_key="urgent_queue",
+                        group_label="Urgent Queue",
+                        department=row.get("department"),
+                        priority=row.get("priority"),
+                        preview="This complaint is marked high priority and still active.",
+                    )
+                    for row in rows
+                    if str(row.get("priority") or "").lower() == "high"
+                    and str(row.get("status") or "") in {"submitted", "pending", "in_progress"}
+                    and (
+                        not isinstance(row.get("last_admin_viewed_updates_at"), datetime)
+                        or (
+                            isinstance(row.get("submitted_at"), datetime)
+                            and row["submitted_at"] > row["last_admin_viewed_updates_at"]
+                        )
+                    )
+                ]
+                groups = [
+                    {"key": "student_updates", "label": "New Student Updates", "items": student_updates},
+                    {"key": "awaiting_assignment", "label": "Awaiting Assignment", "items": awaiting_assignment},
+                    {"key": "urgent_queue", "label": "Urgent Queue", "items": urgent_queue},
+                ]
+            else:
+                cur.execute(
+                    """
+                    SELECT id, title, category, status, department, priority,
+                           last_public_admin_update_at, last_user_viewed_updates_at, resolved_at
+                    FROM complaints
+                    WHERE user_id = %s
+                    ORDER BY created_at DESC
+                    """,
+                    (current_user.user_id,),
+                )
+                rows = cur.fetchall()
+                new_updates = [
+                    _notification_item(
+                        complaint_id=str(row["id"]),
+                        title=str(row.get("title") or "Complaint"),
+                        category=str(row.get("category") or "Uncategorized"),
+                        status_value=str(row.get("status") or "pending"),
+                        timestamp=row.get("last_public_admin_update_at"),
+                        group_key="new_updates",
+                        group_label="New Updates",
+                        department=row.get("department"),
+                        priority=row.get("priority"),
+                        preview="A new public update is available from the complaint team.",
+                    )
+                    for row in rows
+                    if isinstance(row.get("last_public_admin_update_at"), datetime)
+                    and (
+                        not isinstance(row.get("last_user_viewed_updates_at"), datetime)
+                        or row["last_public_admin_update_at"] > row["last_user_viewed_updates_at"]
+                    )
+                ]
+                resolved_recently = [
+                    _notification_item(
+                        complaint_id=str(row["id"]),
+                        title=str(row.get("title") or "Complaint"),
+                        category=str(row.get("category") or "Uncategorized"),
+                        status_value=str(row.get("status") or "resolved"),
+                        timestamp=row.get("resolved_at"),
+                        group_key="resolved_recently",
+                        group_label="Recently Resolved",
+                        department=row.get("department"),
+                        priority=row.get("priority"),
+                        preview="This complaint was recently marked resolved.",
+                    )
+                    for row in rows
+                    if str(row.get("status") or "") == "resolved"
+                    and isinstance(row.get("resolved_at"), datetime)
+                    and (
+                        not isinstance(row.get("last_user_viewed_updates_at"), datetime)
+                        or row["resolved_at"] > row["last_user_viewed_updates_at"]
+                    )
+                ]
+                groups = [
+                    {"key": "new_updates", "label": "New Updates", "items": new_updates},
+                    {"key": "resolved_recently", "label": "Recently Resolved", "items": resolved_recently},
+                ]
+
+    normalized_groups = [
+        {
+            "key": group["key"],
+            "label": group["label"],
+            "count": len(group["items"]),
+            "items": group["items"],
+        }
+        for group in groups
+        if group["items"]
+    ]
+    unique_complaint_ids = {
+        str(item.get("complaint_id"))
+        for group in normalized_groups
+        for item in group["items"]
+        if item.get("complaint_id")
+    }
+    return {
+        "total": len(unique_complaint_ids),
+        "groups": normalized_groups,
+    }
+
+
+@app.post("/notifications/mark-read")
+def mark_notifications_read(
+    payload: NotificationMarkReadRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    now = datetime.now(timezone.utc)
+    viewed_column = "last_admin_viewed_updates_at" if current_user.is_admin else "last_user_viewed_updates_at"
+
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            if payload.mark_all:
+                if current_user.is_admin:
+                    cur.execute(
+                        f"""
+                        UPDATE complaints
+                        SET {viewed_column} = %s
+                        WHERE
+                          (last_student_update_at IS NOT NULL AND ({viewed_column} IS NULL OR last_student_update_at > {viewed_column}))
+                          OR (
+                            status IN ('submitted', 'pending', 'in_progress')
+                            AND assigned_to IS NULL
+                            AND submitted_at IS NOT NULL
+                            AND ({viewed_column} IS NULL OR submitted_at > {viewed_column})
+                          )
+                          OR (
+                            priority = 'high'
+                            AND status IN ('submitted', 'pending', 'in_progress')
+                            AND submitted_at IS NOT NULL
+                            AND ({viewed_column} IS NULL OR submitted_at > {viewed_column})
+                          )
+                        """
+                        ,
+                        (now,),
+                    )
+                else:
+                    cur.execute(
+                        f"""
+                        UPDATE complaints
+                        SET {viewed_column} = %s
+                        WHERE user_id = %s
+                          AND (
+                            (last_public_admin_update_at IS NOT NULL AND ({viewed_column} IS NULL OR last_public_admin_update_at > {viewed_column}))
+                            OR (resolved_at IS NOT NULL AND status = 'resolved' AND ({viewed_column} IS NULL OR resolved_at > {viewed_column}))
+                          )
+                        """
+                        ,
+                        (now, current_user.user_id),
+                    )
+            elif payload.complaint_id:
+                if current_user.is_admin:
+                    cur.execute(
+                        f"""
+                        UPDATE complaints
+                        SET {viewed_column} = %s
+                        WHERE id = %s::uuid
+                        """
+                        ,
+                        (now, payload.complaint_id),
+                    )
+                else:
+                    cur.execute(
+                        f"""
+                        UPDATE complaints
+                        SET {viewed_column} = %s
+                        WHERE id = %s::uuid AND user_id = %s
+                        """
+                        ,
+                        (now, payload.complaint_id, current_user.user_id),
+                    )
+            else:
+                raise HTTPException(status_code=400, detail="complaint_id or mark_all is required")
+        conn.commit()
+
+    return {"ok": True}
 
 
 @app.post("/admin/retrain")
@@ -2114,7 +4369,7 @@ def auto_classify_all_complaints(
                     """
                     SELECT id, title, description
                     FROM complaints
-                    WHERE status = 'pending'
+                    WHERE status IN ('submitted', 'pending')
                       AND (category IS NULL OR category = '' OR category = 'Uncategorized' OR category = 'Unknown')
                     ORDER BY created_at DESC
                     """
@@ -2137,23 +4392,63 @@ def auto_classify_all_complaints(
                         status_code=503,
                         detail=f"Model unavailable during auto-classify: {exc}",
                     ) from exc
+                automation = _build_automation_decision(
+                    analysis=prediction,
+                    fallback_priority=str(prediction["classification"]["priority"]).lower(),
+                    fallback_category=str(prediction["classification"]["label"]),
+                    is_anonymous=False,
+                )
                 cur.execute(
                     """
                     UPDATE complaints
-                    SET category = %s, priority = %s, department = %s, analysis = %s
+                    SET category = %s, priority = %s, department = %s, analysis = %s,
+                        decision_state = %s, risk_score = %s, routing_confidence = %s, decision_source = %s,
+                        decision_reason = %s, fairness_flags = %s, requires_human_review = %s,
+                        escalation_level = %s, sla_due_at = %s, quarantined_reason = %s, auto_route_version = %s
                     WHERE id = %s::uuid
                     RETURNING id, user_id, title, description, category, priority, department, status,
-                              attachments, evidence_types, analysis, source_language, created_at, updated_at
+                              assigned_to, admin_notes, is_anonymous, attachments, evidence_types, analysis, source_language,
+                              decision_state, risk_score, routing_confidence, decision_source, decision_reason,
+                              fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version,
+                              last_student_update_at, last_public_admin_update_at, last_user_viewed_updates_at, last_admin_viewed_updates_at,
+                              submitted_at, pending_at, in_progress_at, resolved_at, created_at, updated_at
                     """,
                     (
                         prediction["classification"]["label"],
                         str(prediction["classification"]["priority"]).lower(),
                         prediction["classification"]["department"],
                         Json(prediction),
+                        automation["decision_state"],
+                        automation["risk_score"],
+                        automation["routing_confidence"],
+                        automation["decision_source"],
+                        Json(automation["decision_reason"]),
+                        Json(automation["fairness_flags"]),
+                        automation["requires_human_review"],
+                        automation["escalation_level"],
+                        automation["sla_due_at"],
+                        automation["quarantined_reason"],
+                        automation["auto_route_version"],
                         row["id"],
                     ),
                 )
                 updated = cur.fetchone()
+                _write_complaint_audit_log(
+                    cur,
+                    complaint_id=str(row["id"]),
+                    actor_type="system",
+                    actor_id=admin_user.email or admin_user.user_id,
+                    event_type="bulk_automation_refresh",
+                    new_state={
+                        "category": prediction["classification"]["label"],
+                        "priority": str(prediction["classification"]["priority"]).lower(),
+                        "department": prediction["classification"]["department"],
+                        "decision_state": automation["decision_state"],
+                    },
+                    reason=automation["decision_reason"],
+                    model_version=str(settings.backbone_model_name),
+                    rule_version=str(automation["auto_route_version"]),
+                )
                 updated_items.append(
                     {
                         "prediction": prediction["classification"],
@@ -2169,6 +4464,51 @@ def auto_classify_all_complaints(
     }
 
 
+@app.get("/admin/audit-log")
+def list_admin_audit_log(
+    limit: int = 50,
+    admin_user: CurrentUser = Depends(require_admin),
+):
+    del admin_user
+    safe_limit = max(1, min(limit, 200))
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, complaint_id, actor_type, actor_id, event_type,
+                       previous_state, new_state, reason, model_version, rule_version, created_at
+                FROM complaint_audit_log
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (safe_limit,),
+            )
+            rows = cur.fetchall()
+    return [_serialize_audit_row(row) for row in rows]
+
+
+@app.get("/admin/complaints/{complaint_id}/audit-log")
+def list_complaint_audit_log(
+    complaint_id: str,
+    admin_user: CurrentUser = Depends(require_admin),
+):
+    del admin_user
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, complaint_id, actor_type, actor_id, event_type,
+                       previous_state, new_state, reason, model_version, rule_version, created_at
+                FROM complaint_audit_log
+                WHERE complaint_id = %s::uuid
+                ORDER BY created_at DESC
+                """,
+                (complaint_id,),
+            )
+            rows = cur.fetchall()
+    return [_serialize_audit_row(row) for row in rows]
+
+
 @app.get("/admin/analytics")
 def get_admin_analytics(admin_user: CurrentUser = Depends(require_admin)):
     del admin_user
@@ -2177,10 +4517,11 @@ def get_admin_analytics(admin_user: CurrentUser = Depends(require_admin)):
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT analysis, category, priority, status
+                SELECT analysis, category, priority, status, department, assigned_to,
+                       decision_state, risk_score, requires_human_review, fairness_flags,
+                       escalation_level, quarantined_reason, sla_due_at
                 FROM complaints
                 ORDER BY created_at DESC
-                LIMIT 200
                 """
             )
             rows = cur.fetchall()
@@ -2188,21 +4529,70 @@ def get_admin_analytics(admin_user: CurrentUser = Depends(require_admin)):
     abusive = 0
     urgent = 0
     duplicates = 0
+    auto_routed = 0
+    human_review = 0
+    escalated = 0
+    quarantined = 0
+    overdue_sla = 0
+    fairness_alerts: Counter[str] = Counter()
+    total_risk = 0.0
     emotions: Counter[str] = Counter()
+    department_workload: dict[str, dict[str, int]] = defaultdict(lambda: {
+        "total": 0,
+        "active": 0,
+        "urgent": 0,
+        "unassigned": 0,
+    })
+    assignee_workload: dict[str, dict[str, int]] = defaultdict(lambda: {
+        "total": 0,
+        "active": 0,
+        "resolved": 0,
+    })
     for row in rows:
         analysis = row.get("analysis") if isinstance(row.get("analysis"), dict) else {}
         sentiment = analysis.get("sentiment", {})
         abuse = analysis.get("abuse", {})
         duplicate = analysis.get("duplicate_detection", {})
+        status_value = str(row.get("status") or "")
+        decision_state = str(row.get("decision_state") or "")
+        department = str(row.get("department") or "Unassigned Department")
+        assignee = str(row.get("assigned_to") or "Unassigned")
         if float(abuse.get("toxicity_score", 0)) >= 0.3 or float(abuse.get("spam_score", 0)) >= 0.35:
             abusive += 1
         if float(sentiment.get("urgency_score", 0)) >= 0.75:
             urgent += 1
         if bool(duplicate.get("is_duplicate")):
             duplicates += 1
+        if decision_state == "routed":
+            auto_routed += 1
+        if bool(row.get("requires_human_review")):
+            human_review += 1
+        if decision_state == "escalated":
+            escalated += 1
+        if decision_state == "quarantined" or row.get("quarantined_reason"):
+            quarantined += 1
+        if isinstance(row.get("sla_due_at"), datetime) and row["sla_due_at"] < datetime.now(timezone.utc) and status_value not in {"resolved", "rejected"}:
+            overdue_sla += 1
+        for flag in row.get("fairness_flags") or []:
+            fairness_alerts[str(flag)] += 1
+        total_risk += float(row.get("risk_score") or 0.0)
         emotion = sentiment.get("emotion")
         if isinstance(emotion, str) and emotion:
             emotions[emotion] += 1
+
+        department_workload[department]["total"] += 1
+        if status_value in {"submitted", "pending", "in_progress"}:
+            department_workload[department]["active"] += 1
+        if float(sentiment.get("urgency_score", 0)) >= 0.75:
+            department_workload[department]["urgent"] += 1
+        if assignee == "Unassigned":
+            department_workload[department]["unassigned"] += 1
+
+        assignee_workload[assignee]["total"] += 1
+        if status_value in {"submitted", "pending", "in_progress"}:
+            assignee_workload[assignee]["active"] += 1
+        if status_value == "resolved":
+            assignee_workload[assignee]["resolved"] += 1
 
     return {
         "summary": {
@@ -2210,8 +4600,33 @@ def get_admin_analytics(admin_user: CurrentUser = Depends(require_admin)):
             "urgent_count": urgent,
             "abusive_or_spam_count": abusive,
             "duplicate_count": duplicates,
+            "auto_routed_count": auto_routed,
+            "human_review_count": human_review,
+            "escalated_count": escalated,
+            "quarantined_count": quarantined,
+            "overdue_sla_count": overdue_sla,
+            "average_risk_score": round(total_risk / len(rows), 4) if rows else 0.0,
+        },
+        "workload": {
+            "departments": sorted(
+                [{"department": key, **value} for key, value in department_workload.items()],
+                key=lambda item: (item["active"], item["urgent"], item["total"]),
+                reverse=True,
+            )[:8],
+            "assignees": sorted(
+                [{"assignee": key, **value} for key, value in assignee_workload.items()],
+                key=lambda item: (item["active"], item["total"]),
+                reverse=True,
+            )[:8],
         },
         "emotion_distribution": dict(emotions.most_common(5)),
+        "fairness_summary": {
+            "alert_count": sum(fairness_alerts.values()),
+            "top_flags": [
+                {"flag": flag, "count": count}
+                for flag, count in fairness_alerts.most_common(6)
+            ],
+        },
         "trend_forecast": trend_forecast,
     }
 
@@ -2288,6 +4703,14 @@ def chatbot_respond(
             f"{status_summary['pending']} pending, {status_summary['in_progress']} in-progress, "
             f"{status_summary['resolved']} resolved, and {status_summary['rejected']} rejected."
         )
+    elif intent == "category_list":
+        project_reply = _format_category_list()
+        follow_up_questions = [
+            "Do you want help choosing the right category for your issue?",
+            "Do you want me to turn your issue into a complaint draft?",
+        ]
+    elif intent == "priority_policy":
+        project_reply, follow_up_questions = _priority_policy_response()
     elif intent == "general_chat":
         project_reply, follow_up_questions = _general_chat_response(message)
     elif intent == "registration" and _is_help_seeking_query(message):
@@ -2365,6 +4788,21 @@ def chatbot_respond(
         else project_reply
     )
 
+    if intent in {"category_list", "priority_policy"}:
+        reply = _clean_assistant_text(project_payload)
+        follow_up_questions = [_clean_assistant_text(question) for question in follow_up_questions if question]
+        return {
+            "reply": reply,
+            "intent": intent,
+            "intent_confidence": round(confidence, 4),
+            "status_summary": status_summary,
+            "duplicate_detection": duplicate if intent == "duplicate_check" else None,
+            "context_snippets": user_context,
+            "analysis_preview": analysis_preview,
+            "follow_up_questions": follow_up_questions,
+            "suggested_title": suggested_title,
+        }
+
     blended = _blend_project_general_content(
         project_text=project_payload,
         general_text=general_guidance,
@@ -2381,6 +4819,9 @@ def chatbot_respond(
 
     if language != "en":
         reply = f"{reply} Language hint detected: {language}. You can continue in your preferred language."
+
+    reply = _clean_assistant_text(reply)
+    follow_up_questions = [_clean_assistant_text(question) for question in follow_up_questions if question]
 
     return {
         "reply": reply,

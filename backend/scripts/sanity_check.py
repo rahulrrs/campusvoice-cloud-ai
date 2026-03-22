@@ -1,46 +1,131 @@
 import os
 import sys
+import zipfile
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
 import pandas as pd
 import torch
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-# Try to import clean_text, but don't fail if src isn't available
 try:
     from src.utils.helpers import clean_text
 except Exception:
     clean_text = None
 
-# ✅ Use cleaned dataset
-FILE_PATH = r"data\dataset_clean.csv"
+DATA_DIR = PROJECT_ROOT / "data"
+FILE_PATH = DATA_DIR / "dataset.csv"
+
+if not FILE_PATH.exists():
+    alt_path = DATA_DIR / "dataset.xlsx"
+    if alt_path.exists():
+        FILE_PATH = alt_path
 
 print("Loading dataset...")
 
-if FILE_PATH.endswith((".xlsx", ".xls")):
-    df = pd.read_excel(FILE_PATH)
+def load_xlsx_without_openpyxl(path: Path) -> pd.DataFrame:
+    ns = {"a": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    with zipfile.ZipFile(path) as workbook:
+        shared_strings: list[str] = []
+        if "xl/sharedStrings.xml" in workbook.namelist():
+            root = ET.fromstring(workbook.read("xl/sharedStrings.xml"))
+            for item in root.findall("a:si", ns):
+                shared_strings.append("".join(node.text or "" for node in item.iterfind(".//a:t", ns)))
+
+        worksheet_names = sorted(
+            name for name in workbook.namelist()
+            if name.startswith("xl/worksheets/sheet") and name.endswith(".xml")
+        )
+
+        best_df = pd.DataFrame()
+        best_score = -1
+        for worksheet_name in worksheet_names:
+            sheet = ET.fromstring(workbook.read(worksheet_name))
+            rows = sheet.findall(".//a:sheetData/a:row", ns)
+            parsed_rows: list[list[str]] = []
+            for row in rows:
+                values: list[str] = []
+                for cell in row.findall("a:c", ns):
+                    cell_type = cell.attrib.get("t")
+                    value_node = cell.find("a:v", ns)
+                    value = "" if value_node is None or value_node.text is None else value_node.text
+                    if cell_type == "s" and value != "":
+                        value = shared_strings[int(value)]
+                    values.append(value)
+                parsed_rows.append(values)
+
+            if not parsed_rows:
+                continue
+
+            header = [str(col).strip() for col in parsed_rows[0]]
+            data = parsed_rows[1:]
+            width = len(header)
+            normalized_rows = []
+            for row in data:
+                if len(row) < width:
+                    row = row + [""] * (width - len(row))
+                elif len(row) > width:
+                    row = row[:width]
+                normalized_rows.append(row)
+
+            candidate_df = pd.DataFrame(normalized_rows, columns=header)
+            normalized_header = {str(col).strip().lower() for col in candidate_df.columns}
+            score = int("text" in normalized_header) + int("category" in normalized_header or "label" in normalized_header) + int("priority" in normalized_header or "priority_fixed" in normalized_header or "priority_id_fixed" in normalized_header)
+            if score > best_score:
+                best_score = score
+                best_df = candidate_df
+
+    return best_df
+
+
+if FILE_PATH.suffix.lower() == ".xlsx":
+    df = load_xlsx_without_openpyxl(FILE_PATH)
+elif FILE_PATH.suffix.lower() == ".xls":
+    raise ValueError("Please convert dataset.xls to dataset.csv or dataset.xlsx before running sanity_check.py")
 else:
     df = pd.read_csv(FILE_PATH, low_memory=False)
 
-print("✅ Dataset Loaded Successfully\n")
+print("Dataset loaded successfully\n")
+normalized_columns = {str(col).strip().lower(): col for col in df.columns}
+if "category" in normalized_columns and "label" not in normalized_columns:
+    df = df.rename(columns={normalized_columns["category"]: "label"})
+if "priority" in normalized_columns:
+    current_priority_col = normalized_columns["priority"]
+    if current_priority_col != "priority":
+        df = df.rename(columns={current_priority_col: "priority"})
+if "text" in normalized_columns:
+    current_text_col = normalized_columns["text"]
+    if current_text_col != "text":
+        df = df.rename(columns={current_text_col: "text"})
 
 print("Columns:", df.columns.tolist())
-print("Total Rows:", len(df))
+print("Total rows:", len(df))
 print("\nFirst 3 rows:")
 print(df.head(3))
 
-# ✅ Updated required columns
-required = {"text", "label", "label_id", "priority_id_fixed"}
+required = {"text", "label"}
 missing = required - set(df.columns)
 if missing:
-    raise ValueError(f"❌ Missing required columns: {missing}")
-print("\n✅ Required columns found")
+    raise ValueError(f"Missing required columns: {missing}")
+print("\nRequired columns found")
+
+if "label_id" not in df.columns:
+    print("label_id not found. It will be generated from label during cleaning.")
+
+priority_col = next(
+    (candidate for candidate in ("priority_id_fixed", "priority_fixed", "priority") if candidate in df.columns),
+    None,
+)
+if priority_col is None:
+    raise ValueError("Missing priority column: expected one of priority_id_fixed, priority_fixed, priority")
+print(f"Using priority column: {priority_col}")
 
 print("\nMissing values:")
 print(df.isnull().sum())
 
-# Clean text (optional)
 df["text"] = df["text"].astype(str)
 if clean_text is not None:
     df["text"] = df["text"].map(clean_text)
@@ -53,44 +138,69 @@ print(f"\nEmpty text rows: {empty_text_count}")
 duplicates = df.duplicated(subset=["text"]).sum()
 print(f"Duplicate text rows: {duplicates}")
 
-# Validate label_id int
-try:
-    df["label_id"] = pd.to_numeric(df["label_id"], errors="raise").astype(int)
-    print("\n✅ label_id is integer")
-except Exception as e:
-    print("\n❌ label_id is NOT integer:", e)
+if "label_id" in df.columns:
+    try:
+        df["label_id"] = pd.to_numeric(df["label_id"], errors="raise").astype(int)
+        print("\nlabel_id is integer")
+    except Exception as exc:
+        print("\nlabel_id is NOT integer:", exc)
 
-# ✅ Validate priority_id_fixed int and values
-try:
-    df["priority_id_fixed"] = pd.to_numeric(df["priority_id_fixed"], errors="raise").astype(int)
-    bad = (~df["priority_id_fixed"].isin([0, 1, 2])).sum()
+if priority_col == "priority_id_fixed":
+    try:
+        df["priority_id_fixed"] = pd.to_numeric(df["priority_id_fixed"], errors="raise").astype(int)
+        bad = (~df["priority_id_fixed"].isin([0, 1, 2])).sum()
+        if bad == 0:
+            print("priority_id_fixed is valid (0/1/2)")
+        else:
+            print(f"priority_id_fixed has invalid values (not 0/1/2): {bad}")
+    except Exception as exc:
+        print("\npriority_id_fixed is NOT integer:", exc)
+else:
+    normalized = (
+        df[priority_col]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+        .map(
+            {
+                "low": 0,
+                "l": 0,
+                "0": 0,
+                "medium": 1,
+                "med": 1,
+                "m": 1,
+                "1": 1,
+                "high": 2,
+                "h": 2,
+                "2": 2,
+            }
+        )
+    )
+    bad = normalized.isna().sum()
     if bad == 0:
-        print("✅ priority_id_fixed is valid (0/1/2)")
+        print(f"{priority_col} can be mapped cleanly to priority_id_fixed (0/1/2)")
     else:
-        print(f"⚠️ priority_id_fixed has invalid values (not 0/1/2): {bad}")
-except Exception as e:
-    print("\n❌ priority_id_fixed is NOT integer:", e)
+        print(f"{priority_col} has unmapped values: {bad}")
 
-print("\nLabel Distribution (label):")
+print("\nLabel distribution:")
 print(df["label"].value_counts())
 
-print("\nPriority Distribution (priority_id_fixed):")
-print(df["priority_id_fixed"].value_counts().sort_index())
+print(f"\nPriority distribution ({priority_col}):")
+print(df[priority_col].value_counts().sort_index())
 
-# Text length stats
-df["text_length"] = df["text"].apply(lambda x: len(str(x).split()))
-print("\nText Length Stats:")
+df["text_length"] = df["text"].apply(lambda value: len(str(value).split()))
+print("\nText length stats:")
 print(df["text_length"].describe())
 
-print("\nLongest Text Sample (first 500 chars):")
+print("\nLongest text sample (first 500 chars):")
 print(df.sort_values("text_length", ascending=False)["text"].iloc[0][:500])
 
 print("\n===============================")
 print("GPU CHECK")
 print("===============================")
 if torch.cuda.is_available():
-    print("✅ GPU Available:", torch.cuda.get_device_name(0))
+    print("GPU Available:", torch.cuda.get_device_name(0))
 else:
-    print("❌ GPU NOT Available")
+    print("GPU NOT Available")
 
-print("\nSanity Check Completed Successfully 🚀")
+print("\nSanity check completed successfully")

@@ -1,4 +1,3 @@
-import { motion } from "framer-motion";
 import { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -11,6 +10,8 @@ interface StatsCardProps {
     isPositive: boolean;
   };
   variant?: "default" | "primary" | "success" | "warning" | "pending";
+  active?: boolean;
+  onClick?: () => void;
 }
 
 const variantStyles = {
@@ -29,15 +30,31 @@ const iconStyles = {
   pending: "bg-pending/10 text-pending",
 };
 
-const StatsCard = ({ title, value, icon: Icon, trend, variant = "default" }: StatsCardProps) => {
+const StatsCard = ({
+  title,
+  value,
+  icon: Icon,
+  trend,
+  variant = "default",
+  active = false,
+  onClick,
+}: StatsCardProps) => {
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      whileHover={{ scale: 1.02 }}
-      transition={{ duration: 0.2 }}
+    <div
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={(event) => {
+        if (!onClick) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onClick();
+        }
+      }}
       className={cn(
-        "rounded-xl p-6 shadow-card border transition-all duration-300",
+        "rounded-xl border p-6 shadow-card transition-colors duration-200",
+        onClick && "cursor-pointer",
+        active && "ring-2 ring-primary/30 shadow-elevated",
         variantStyles[variant]
       )}
     >
@@ -60,7 +77,7 @@ const StatsCard = ({ title, value, icon: Icon, trend, variant = "default" }: Sta
           <Icon className="h-6 w-6" />
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 };
 

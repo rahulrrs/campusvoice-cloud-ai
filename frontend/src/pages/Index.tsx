@@ -1,203 +1,204 @@
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { 
-  MessageSquarePlus, 
-  Search, 
-  Shield, 
-  Zap, 
-  CheckCircle2,
+import {
   ArrowRight,
-  ClipboardList
+  BellRing,
+  CheckCircle2,
+  Clock3,
+  MessageSquarePlus,
+  Shield,
+  Sparkles,
+  Waypoints,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 
-const features = [
+const pillars = [
   {
+    title: "Speak up without friction",
+    description: "Submit a complaint quickly, attach evidence, and choose anonymous reporting when needed.",
     icon: MessageSquarePlus,
-    title: "Easy Submission",
-    description: "Submit complaints in minutes with our intuitive form. Attach files and track progress easily.",
   },
   {
-    icon: Search,
-    title: "Real-time Tracking",
-    description: "Monitor your complaint status 24/7. Get instant notifications on every update.",
+    title: "Track every movement",
+    description: "See status changes, replies, and resolution progress instead of wondering what happened next.",
+    icon: Waypoints,
   },
   {
+    title: "Escalate the right cases",
+    description: "Urgent issues surface faster so safety, harassment, and service breakdowns are easier to act on.",
     icon: Shield,
-    title: "Secure & Private",
-    description: "Your data is encrypted and protected. Anonymous submission options available.",
   },
-  {
-    icon: Zap,
-    title: "Fast Resolution",
-    description: "Our streamlined process ensures quick response times and efficient resolution.",
-  },
+];
+
+const stats = [
+  { label: "Submission paths", value: "Text + files + voice" },
+  { label: "Tracking states", value: "4 structured stages" },
+  { label: "Reporting mode", value: "Anonymous by default" },
 ];
 
 const Index = () => {
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-screen bg-background text-foreground">
       <Header />
-      
-      {/* Hero Section */}
-      <section className="relative overflow-hidden gradient-hero">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/10 via-transparent to-transparent" />
-        <div className="container mx-auto px-4 py-20 md:py-32 relative">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="max-w-3xl mx-auto text-center"
-          >
-            <h1 className="text-4xl md:text-6xl font-bold text-foreground mb-6 leading-tight">
-              Your Voice Matters.{" "}
-              <span className="text-primary">We Listen.</span>
-            </h1>
-            
-            <p className="text-lg md:text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-              The modern platform for students to submit, track, and resolve campus complaints efficiently. Make your campus better, one voice at a time.
-            </p>
-            
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link to="/submit">
-                <Button variant="hero" size="xl" className="w-full sm:w-auto">
-                  <MessageSquarePlus className="h-5 w-5 mr-2" />
-                  Submit a Complaint
-                </Button>
-              </Link>
-              <Link to="/dashboard">
-                <Button variant="outline" size="xl" className="w-full sm:w-auto">
-                  <ClipboardList className="h-5 w-5 mr-2" />
-                  Track My Complaints
-                </Button>
-              </Link>
-            </div>
-          </motion.div>
-        </div>
-      </section>
 
-      {/* Features Section */}
-      <section className="py-20">
-        <div className="container mx-auto px-4">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-center mb-16"
-          >
-            <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
-              Why Choose CampusVoice?
-            </h2>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Built specifically for students, our platform makes it easy to raise concerns and get them resolved.
-            </p>
-          </motion.div>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {features.map((feature, index) => (
+      <main className="space-y-16 pb-8 pt-6 md:space-y-20">
+        <section className="section-shell">
+          <div className="hero-frame mesh-grid px-6 py-10 md:px-10 md:py-12">
+            <div className="absolute inset-0 gradient-hero opacity-90" />
+            <div className="relative grid gap-10 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
               <motion.div
-                key={feature.title}
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5 }}
+                className="space-y-6"
+              >
+                <div className="inline-flex items-center gap-2 rounded-full border border-slate-900/10 bg-white/80 px-4 py-2 text-sm text-slate-700 shadow-card">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  Complaint handling that feels clear, modern, and accountable
+                </div>
+
+                <div className="space-y-4">
+                  <h1 className="heading-display max-w-3xl text-4xl font-bold leading-[0.96] md:text-6xl">
+                    A clearer way for students to report, track, and resolve campus issues.
+                  </h1>
+                  <p className="max-w-2xl text-base leading-7 text-muted-foreground md:text-lg">
+                    One place to submit complaints, follow progress, and receive updates without confusion.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <Button asChild variant="hero" size="xl" className="rounded-full px-8">
+                    <Link to="/submit">
+                      Submit a Complaint
+                      <ArrowRight className="h-5 w-5" />
+                    </Link>
+                  </Button>
+                  <Button asChild variant="outline" size="xl" className="rounded-full bg-white/85 px-8">
+                    <Link to="/dashboard">
+                      Track My Complaints
+                    </Link>
+                  </Button>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  {stats.map((item) => (
+                    <div key={item.label} className="surface-soft px-4 py-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">{item.label}</p>
+                      <p className="mt-2 text-base font-semibold text-foreground">{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.6, delay: 0.1 }}
+                className="surface-panel relative overflow-hidden p-7"
+              >
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(125,211,252,0.22),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(251,191,36,0.14),transparent_24%)]" />
+                <div className="relative space-y-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Live system snapshot</p>
+                      <h2 className="mt-2 heading-display text-2xl font-semibold text-white">What students get</h2>
+                    </div>
+                    <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs text-slate-200">
+                      Real-time workflow
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-sky-400/15 text-sky-200">
+                          <Clock3 className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-white">Structured complaint timeline</p>
+                          <p className="text-sm text-slate-300">Submitted, pending, in progress, resolved.</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-400/15 text-emerald-200">
+                          <BellRing className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-white">Clear notifications</p>
+                          <p className="text-sm text-slate-300">Unread updates, assignment changes, and resolution alerts.</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-300/15 text-amber-100">
+                          <CheckCircle2 className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="font-medium text-white">Anonymous reporting</p>
+                          <p className="text-sm text-slate-300">Safer reporting by default, with identity reveal left optional.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          </div>
+        </section>
+
+        <section className="section-shell">
+          <div className="grid gap-5 lg:grid-cols-3">
+            {pillars.map((pillar, index) => (
+              <motion.div
+                key={pillar.title}
+                initial={{ opacity: 0, y: 18 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: index * 0.1 }}
-                className="group p-6 rounded-2xl bg-card border shadow-card hover:shadow-elevated transition-all duration-300"
+                className="surface-card p-7"
               >
-                <div className="h-12 w-12 rounded-xl gradient-primary flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                  <feature.icon className="h-6 w-6 text-primary-foreground" />
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                  <pillar.icon className="h-6 w-6" />
                 </div>
-                <h3 className="text-lg font-semibold text-foreground mb-2">
-                  {feature.title}
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  {feature.description}
+                <h2 className="mt-5 heading-display text-2xl font-semibold">{pillar.title}</h2>
+                <p className="mt-3 text-sm leading-7 text-muted-foreground">{pillar.description}</p>
+              </motion.div>
+            ))}
+          </div>
+        </section>
+
+        <section className="section-shell">
+          <div className="surface-panel px-6 py-8 md:px-10">
+            <div className="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center">
+              <div className="space-y-3">
+                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-200">Ready to start</p>
+                <h2 className="heading-display text-3xl font-bold text-white md:text-4xl">
+                  Give students one place to be heard.
+                </h2>
+                <p className="max-w-2xl text-base leading-8 text-slate-300">
+                  Submit a complaint, track the status, and follow updates in one clear workflow.
                 </p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
+              </div>
 
-      {/* How It Works */}
-      <section className="py-20 bg-secondary/50">
-        <div className="container mx-auto px-4">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-center mb-16"
-          >
-            <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
-              How It Works
-            </h2>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Three simple steps to get your concerns addressed
-            </p>
-          </motion.div>
-
-          <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
-            {[
-              { step: "01", title: "Submit", desc: "Fill out the complaint form with details about your concern" },
-              { step: "02", title: "Track", desc: "Monitor your complaint status in real-time on your dashboard" },
-              { step: "03", title: "Resolve", desc: "Get notified when your complaint is addressed and resolved" },
-            ].map((item, index) => (
-              <motion.div
-                key={item.step}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: index * 0.15 }}
-                className="relative text-center"
-              >
-                <div className="text-6xl font-bold text-primary/10 mb-4">
-                  {item.step}
-                </div>
-                <h3 className="text-xl font-semibold text-foreground mb-2">
-                  {item.title}
-                </h3>
-                <p className="text-muted-foreground">{item.desc}</p>
-                {index < 2 && (
-                  <ArrowRight className="hidden md:block absolute top-12 -right-4 h-6 w-6 text-primary/30" />
-                )}
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="py-20">
-        <div className="container mx-auto px-4">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            viewport={{ once: true }}
-            className="max-w-4xl mx-auto rounded-3xl gradient-primary p-8 md:p-12 text-center relative overflow-hidden"
-          >
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-white/10 via-transparent to-transparent" />
-            <div className="relative">
-              <CheckCircle2 className="h-12 w-12 text-primary-foreground mx-auto mb-6" />
-              <h2 className="text-2xl md:text-4xl font-bold text-primary-foreground mb-4">
-                Ready to Be Heard?
-              </h2>
-              <p className="text-lg text-primary-foreground/80 mb-8 max-w-xl mx-auto">
-                Join thousands of students who have successfully resolved their concerns through CampusVoice.
-              </p>
-              <Link to="/submit">
-                <Button 
-                  size="xl" 
-                  className="bg-primary-foreground text-primary hover:bg-primary-foreground/90"
-                >
-                  Submit Your First Complaint
-                  <ArrowRight className="ml-2 h-5 w-5" />
+              <div className="flex flex-col gap-3 sm:flex-row lg:flex-col">
+                <Button asChild variant="hero" size="lg" className="rounded-full bg-white text-slate-950 hover:bg-white/90">
+                  <Link to="/submit">Submit a Complaint</Link>
                 </Button>
-              </Link>
+                <Button asChild variant="secondary" size="lg" className="rounded-full border border-white/15 bg-white/10 text-white hover:bg-white/15">
+                  <Link to="/faq">Read FAQs</Link>
+                </Button>
+              </div>
             </div>
-          </motion.div>
-        </div>
-      </section>
+          </div>
+        </section>
+      </main>
 
       <Footer />
     </div>

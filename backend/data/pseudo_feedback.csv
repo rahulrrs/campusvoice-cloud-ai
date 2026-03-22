@@ -1,4 +1,0 @@
-text,label_id,priority_id_fixed,label_confidence,priority_confidence,source,created_at
-"The classroom projector frequently stops working during lectures which interrupts teaching.
-        Faculty members waste time trying to fix it and students miss important explanations.
-        This issue has been reported multiple times but still not resolved. Please repair or replace the projector.",11,1,0.9463907480239868,0.9902204275131226,pseudo,2026-03-14T21:32:03.914253

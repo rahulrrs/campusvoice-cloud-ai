@@ -1,7 +1,9 @@
 import { cn } from "@/lib/utils";
 
 export type Status =
+  | "submitted"
   | "pending"
+  | "in_progress"
   | "in-progress"
   | "resolved"
   | "rejected"
@@ -13,9 +15,17 @@ interface StatusBadgeProps {
 }
 
 const statusConfig: Record<Status, { label: string; className: string }> = {
+  submitted: {
+    label: "Submitted",
+    className: "bg-slate-100 text-slate-700 border-slate-200",
+  },
   pending: {
     label: "Pending",
     className: "bg-pending/10 text-pending border-pending/20",
+  },
+  in_progress: {
+    label: "In Progress",
+    className: "bg-primary/10 text-primary border-primary/20",
   },
   "in-progress": {
     label: "In Progress",
@@ -51,7 +61,9 @@ const StatusBadge = ({ status, className }: StatusBadgeProps) => {
       <span
         className={cn(
           "w-1.5 h-1.5 rounded-full mr-1.5",
+          status === "submitted" && "bg-slate-500",
           status === "pending" && "bg-pending",
+          status === "in_progress" && "bg-primary",
           status === "in-progress" && "bg-primary",
           status === "resolved" && "bg-success",
           status === "rejected" && "bg-destructive",

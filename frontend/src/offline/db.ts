@@ -13,6 +13,7 @@ export type PendingComplaintData = {
   user_id: string;
   category?: string;
   priority?: string;
+  is_anonymous?: boolean;
   attachment_keys?: string[];
   queued_attachments?: QueuedAttachment[];
   evidence_types?: string[];

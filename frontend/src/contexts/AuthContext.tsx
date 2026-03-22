@@ -5,8 +5,10 @@ interface AuthContextType {
   user: AuthUser | null;
   session: AuthSession | null;
   loading: boolean;
+  googleAuthEnabled: boolean;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signInWithGoogle: () => Promise<{ error: Error | null }>;
   confirmSignUp: (email: string, code: string) => Promise<{ error: Error | null }>;
   resendSignUpCode: (email: string) => Promise<{ error: Error | null }>;
   requestPasswordReset: (email: string) => Promise<{ error: Error | null }>;
@@ -85,6 +87,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setUser(null);
   };
 
+  const signInWithGoogle = async () => {
+    return awsAuth.signInWithGoogle();
+  };
+
   const confirmSignUp = async (email: string, code: string) => {
     return awsAuth.confirmSignUp(email, code);
   };
@@ -107,8 +113,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         user,
         session,
         loading,
+        googleAuthEnabled: awsAuth.isGoogleAuthEnabled(),
         signUp,
         signIn,
+        signInWithGoogle,
         confirmSignUp,
         resendSignUpCode,
         requestPasswordReset,

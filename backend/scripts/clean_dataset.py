@@ -1,24 +1,34 @@
-import os
 import json
+import os
 import re
+import zipfile
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
 import pandas as pd
 
 # ================== CONFIG ==================
-IN_PATH = r"data\dataset.csv"
-OUT_PATH = r"data\dataset_clean.csv"
-OUT_DIR = r"outputs\edu_classifier_multitask"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DATA_DIR = PROJECT_ROOT / "data"
+OUTPUTS_DIR = PROJECT_ROOT / "outputs" / "edu_classifier_multitask"
+INPUT_CANDIDATES = [
+    DATA_DIR / "dataset.csv",
+    DATA_DIR / "dataset.xlsx",
+    DATA_DIR / "dataset.xls",
+]
+OUT_PATH = DATA_DIR / "dataset_clean.csv"
+OUT_DIR = OUTPUTS_DIR
 MIN_WORDS = 5
 
 DEFAULT_PRIORITY_ID = 1  # 0=Low, 1=Medium, 2=High
 
-# ── Label-noise fix: reclassify course-review texts under "Examination" → "Academic"
+# Label-noise fix: reclassify course-review texts under "Examination" -> "Academic"
 FIX_EXAM_LABEL_NOISE = True
 
-# ── Synthetic augmentation for underrepresented High-priority exam complaints
+# Synthetic augmentation for underrepresented High-priority exam complaints
 AUGMENT_EXAM_HIGH = True
 # ===========================================
 
-# ─── Regex library ───────────────────────────────────────────────────────────
 _URGENCY_RE = re.compile(
     r"\b(today|tomorrow|tonight|in\s*\d+\s*(hours|hrs)|within\s*\d+\s*(hours|hrs)|next\s*day)\b",
     re.I,
@@ -47,11 +57,43 @@ _WATER_OUTAGE_RE = re.compile(
 )
 _DURATION_RE = re.compile(r"\b(\d+)\s*(day|days|d)\b", re.I)
 
+_PRIORITY_MAP = {
+    "low": 0,
+    "l": 0,
+    "0": 0,
+    "medium": 1,
+    "med": 1,
+    "m": 1,
+    "1": 1,
+    "high": 2,
+    "h": 2,
+    "2": 2,
+}
+
+_COLUMN_ALIASES = {
+    "text": "text",
+    "complaint_text": "text",
+    "description": "text",
+    "content": "text",
+    "label": "label",
+    "category": "label",
+    "class": "label",
+    "priority": "priority",
+    "priority_fixed": "priority_fixed",
+    "source": "source",
+    "source_type": "source_type",
+    "source_ty": "source_type",
+    "text_len": "text_len",
+    "text_length": "text_len",
+    "word_count": "word_count",
+    "word_cou": "word_count",
+    "label_id": "label_id",
+}
+
 
 def _is_exam_label_noise(text: str) -> bool:
-    """Return True if an 'Examination' row is actually a course review (not a real complaint)."""
     if _EXAM_COMPLAINT_RE.search(text):
-        return False  # has real exam complaint keywords → keep as Examination
+        return False
     return bool(_COURSE_REVIEW_RE.search(text))
 
 
@@ -80,7 +122,92 @@ def safe_strip(series: pd.Series) -> pd.Series:
     return series.astype(str).str.strip()
 
 
-# ─── Synthetic exam-complaint rows ───────────────────────────────────────────
+def resolve_input_path() -> Path:
+    for path in INPUT_CANDIDATES:
+        if path.exists():
+            return path
+    tried = ", ".join(str(path) for path in INPUT_CANDIDATES)
+    raise FileNotFoundError(f"Could not find dataset file. Tried: {tried}")
+
+
+def _load_xlsx_without_openpyxl(path: Path) -> pd.DataFrame:
+    ns = {"a": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    with zipfile.ZipFile(path) as workbook:
+        shared_strings: list[str] = []
+        if "xl/sharedStrings.xml" in workbook.namelist():
+            root = ET.fromstring(workbook.read("xl/sharedStrings.xml"))
+            for item in root.findall("a:si", ns):
+                parts = [node.text or "" for node in item.iterfind(".//a:t", ns)]
+                shared_strings.append("".join(parts))
+
+        worksheet_names = sorted(
+            name for name in workbook.namelist()
+            if name.startswith("xl/worksheets/sheet") and name.endswith(".xml")
+        )
+
+        best_df = pd.DataFrame()
+        best_score = -1
+        for worksheet_name in worksheet_names:
+            sheet = ET.fromstring(workbook.read(worksheet_name))
+            rows = sheet.findall(".//a:sheetData/a:row", ns)
+            parsed_rows: list[list[str]] = []
+            for row in rows:
+                values: list[str] = []
+                for cell in row.findall("a:c", ns):
+                    cell_type = cell.attrib.get("t")
+                    value_node = cell.find("a:v", ns)
+                    value = "" if value_node is None or value_node.text is None else value_node.text
+                    if cell_type == "s" and value != "":
+                        value = shared_strings[int(value)]
+                    values.append(value)
+                parsed_rows.append(values)
+
+            if not parsed_rows:
+                continue
+
+            header = [str(col).strip() for col in parsed_rows[0]]
+            data = parsed_rows[1:]
+            width = len(header)
+            normalized_rows = []
+            for row in data:
+                if len(row) < width:
+                    row = row + [""] * (width - len(row))
+                elif len(row) > width:
+                    row = row[:width]
+                normalized_rows.append(row)
+
+            candidate_df = pd.DataFrame(normalized_rows, columns=header)
+            normalized_header = {str(col).strip().lower() for col in candidate_df.columns}
+            score = int("text" in normalized_header) + int("category" in normalized_header or "label" in normalized_header) + int("priority" in normalized_header or "priority_fixed" in normalized_header or "priority_id_fixed" in normalized_header)
+            if score > best_score:
+                best_score = score
+                best_df = candidate_df
+
+    return best_df
+
+
+def load_input_dataframe(path: Path) -> pd.DataFrame:
+    suffix = path.suffix.lower()
+    if suffix == ".csv":
+        return pd.read_csv(path, low_memory=False)
+    if suffix == ".xlsx":
+        return _load_xlsx_without_openpyxl(path)
+    if suffix == ".xls":
+        raise ValueError(
+            "The current environment cannot read .xls files automatically. "
+            "Please convert it to .csv or .xlsx first."
+        )
+    raise ValueError(f"Unsupported dataset file format: {path}")
+
+
+def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    renamed = {}
+    for col in df.columns:
+        key = str(col).strip().lower()
+        renamed[col] = _COLUMN_ALIASES.get(key, key)
+    return df.rename(columns=renamed)
+
+
 _EXAM_SYNTHETIC = [
     "Hall ticket is not available on the portal and exam is tomorrow. Please resolve urgently.",
     "My admit card has not been released and the exam starts tomorrow. Need immediate help.",
@@ -101,173 +228,164 @@ _EXAM_SYNTHETIC = [
 
 
 def main():
-    print(f"📥 Loading: {IN_PATH}")
-    df = pd.read_csv(IN_PATH, low_memory=False)
+    in_path = resolve_input_path()
+    print(f"Loading: {in_path}")
+    df = normalize_columns(load_input_dataframe(in_path))
 
-    # --- required columns ---
-    need = {"text", "label", "label_id", "priority_id_fixed"}
+    need = {"text", "label"}
     missing = need - set(df.columns)
     if missing:
-        raise ValueError(f"❌ Missing required columns: {missing}")
+        raise ValueError(f"Missing required columns: {missing}")
 
-    # --- clean text/labels ---
-    df["text"] = (
-        df["text"]
-        .astype(str)
-        .str.replace(r"\s+", " ", regex=True)
-        .str.strip()
-    )
+    has_priority_id = "priority_id_fixed" in df.columns
+    has_priority_text = "priority" in df.columns or "priority_fixed" in df.columns
+    if not has_priority_id and not has_priority_text:
+        raise ValueError(
+            "Missing priority column: expected one of priority_id_fixed, priority, priority_fixed"
+        )
+
+    df["text"] = df["text"].astype(str).str.replace(r"\s+", " ", regex=True).str.strip()
     df["label"] = safe_strip(df["label"])
+
+    if "label_id" not in df.columns:
+        print("label_id column not found. Generating label IDs from label values.")
+        df["label_id"] = (
+            pd.Categorical(df["label"].astype(str).str.strip(), ordered=True).codes.astype(int)
+        )
 
     if "priority_fixed" in df.columns:
         df["priority_fixed"] = safe_strip(df["priority_fixed"])
     if "priority" in df.columns:
         df["priority"] = safe_strip(df["priority"])
 
-    # --- remove empty text ---
     before = len(df)
     df = df[df["text"].str.len() > 0].copy()
-    print(f"🧹 Removed empty: {before - len(df)}")
+    print(f"Removed empty rows: {before - len(df)}")
 
-    # --- remove short text (< MIN_WORDS) ---
     before = len(df)
     df["word_count"] = df["text"].str.split().str.len().astype(int)
     df = df[df["word_count"] >= MIN_WORDS].copy()
-    print(f"🧹 Removed short (<{MIN_WORDS} words): {before - len(df)}")
+    print(f"Removed short rows (<{MIN_WORDS} words): {before - len(df)}")
 
-    # --- fix/cast label_id ---
     before = len(df)
     df["label_id"] = pd.to_numeric(df["label_id"], errors="coerce")
     df = df.dropna(subset=["label_id"]).copy()
     df["label_id"] = df["label_id"].astype(int)
-    print(f"🧹 Removed invalid label_id: {before - len(df)}")
+    print(f"Removed invalid label_id rows: {before - len(df)}")
 
-    # ========================================================
-    # ✅ FIX 1: EXAMINATION LABEL NOISE
-    #    Course-review texts mislabeled as "Examination" are
-    #    reclassified to "Academic" (label_id=0) so the model
-    #    learns a clean boundary for real exam complaints.
-    # ========================================================
-    if FIX_EXAM_LABEL_NOISE:
-        academic_label_id = int(df[df["label"] == "Academic"]["label_id"].iloc[0])
+    if FIX_EXAM_LABEL_NOISE and (df["label"] == "Academic").any() and (df["label"] == "Examination").any():
+        academic_label_id = int(df.loc[df["label"] == "Academic", "label_id"].iloc[0])
         exam_mask = df["label"] == "Examination"
         noise_mask = exam_mask & df["text"].apply(_is_exam_label_noise)
         reclassified = int(noise_mask.sum())
         df.loc[noise_mask, "label"] = "Academic"
         df.loc[noise_mask, "label_id"] = academic_label_id
-        # Course reviews are typically Low priority – keep existing priority
-        print(f"🔁 Reclassified Examination→Academic (label noise): {reclassified} rows")
+        print(f"Reclassified Examination -> Academic rows: {reclassified}")
 
-    # ========================================================
-    # ✅ FIX 2: PRIORITY HANDLING
-    # ========================================================
+    # Remap arbitrary dataset label IDs (for example 1..15) to contiguous 0..N-1 IDs
+    # because the training head size is derived from the number of unique labels.
+    label_order = (
+        df[["label_id", "label"]]
+        .drop_duplicates()
+        .sort_values(["label_id", "label"])
+        .reset_index(drop=True)
+    )
+    remapped_ids = {int(old_id): new_id for new_id, old_id in enumerate(label_order["label_id"].tolist())}
+    df["label_id"] = df["label_id"].map(remapped_ids).astype(int)
+    print(
+        "Remapped label_id values to contiguous IDs:",
+        {old_id: new_id for old_id, new_id in remapped_ids.items()},
+    )
+
+    if "priority_id_fixed" not in df.columns:
+        df["priority_id_fixed"] = pd.NA
+
     df["priority_id_fixed"] = pd.to_numeric(df["priority_id_fixed"], errors="coerce")
 
-    pmap = {
-        "low": 0, "l": 0, "0": 0,
-        "medium": 1, "med": 1, "m": 1, "1": 1,
-        "high": 2, "h": 2, "2": 2,
-    }
+    recovered = 0
+    invalid_mask = df["priority_id_fixed"].isna() | (~df["priority_id_fixed"].isin([0, 1, 2]))
+    if invalid_mask.any():
+        src_col = "priority_fixed" if "priority_fixed" in df.columns else ("priority" if "priority" in df.columns else None)
+        if src_col is not None:
+            recovered_values = (
+                df.loc[invalid_mask, src_col].astype(str).str.strip().str.lower().map(_PRIORITY_MAP)
+            )
+            recovered_mask = recovered_values.notna()
+            recovered = int(recovered_mask.sum())
+            if recovered:
+                df.loc[recovered_values.index[recovered_mask], "priority_id_fixed"] = (
+                    recovered_values.loc[recovered_mask].astype(int).values
+                )
 
     invalid_mask = df["priority_id_fixed"].isna() | (~df["priority_id_fixed"].isin([0, 1, 2]))
-
-    recovered = 0
-    if invalid_mask.any():
-        src_col = (
-            "priority_fixed" if "priority_fixed" in df.columns
-            else ("priority" if "priority" in df.columns else None)
-        )
-        if src_col:
-            tmp = df.loc[invalid_mask, src_col].astype(str).str.strip().str.lower()
-            rec = tmp.map(pmap)
-            rec_mask = rec.notna()
-            df.loc[invalid_mask & rec_mask, "priority_id_fixed"] = rec[rec_mask].astype(int)
-            recovered = int(rec_mask.sum())
-
-    invalid_mask2 = df["priority_id_fixed"].isna() | (~df["priority_id_fixed"].isin([0, 1, 2]))
-    imputed = int(invalid_mask2.sum())
-    if imputed > 0:
-        df.loc[invalid_mask2, "priority_id_fixed"] = DEFAULT_PRIORITY_ID
+    imputed = int(invalid_mask.sum())
+    if imputed:
+        df.loc[invalid_mask, "priority_id_fixed"] = DEFAULT_PRIORITY_ID
 
     df["priority_imputed"] = 0
-    if imputed > 0:
-        df.loc[invalid_mask2, "priority_imputed"] = 1
+    if imputed:
+        df.loc[invalid_mask, "priority_imputed"] = 1
 
     df["priority_id_fixed"] = df["priority_id_fixed"].astype(int)
+    print(f"Recovered priority rows from text labels: {recovered}")
+    print(f"Imputed default Medium priority rows: {imputed}")
 
-    print(f"🛠️  Recovered priority from text: {recovered}")
-    print(f"🛠️  Imputed priority_id_fixed to {DEFAULT_PRIORITY_ID} (Medium) for rows: {imputed}")
-
-    # ========================================================
-    # ✅ FIX 3: HEURISTIC PRIORITY OVERRIDES
-    #    Applied BEFORE augmentation so synthetic rows inherit
-    #    correct ground-truth priorities.
-    # ========================================================
     before_override = df["priority_id_fixed"].copy()
-
-    exam_mask = df["text"].astype(str).map(_is_exam_urgent)
-    water_mask = df["text"].astype(str).map(_is_hostel_water_outage)
-
+    exam_mask = df["text"].map(_is_exam_urgent)
+    water_mask = df["text"].map(_is_hostel_water_outage)
     df.loc[exam_mask, "priority_id_fixed"] = 2
     df.loc[water_mask, "priority_id_fixed"] = 2
-
     overridden = int((before_override != df["priority_id_fixed"]).sum())
-    print(f"⬆️  Priority overrides → High (exam/water urgency): {overridden}")
+    print(f"Priority overrides to High: {overridden}")
 
-    # ========================================================
-    # ✅ FIX 4: SYNTHETIC AUGMENTATION FOR HIGH-PRIORITY EXAM
-    #    The 'Examination' + High-priority combination is very
-    #    rare (<100 rows). Add targeted synthetic rows so the
-    #    model can learn this important pattern.
-    # ========================================================
-    if AUGMENT_EXAM_HIGH:
-        exam_label_id = int(df[df["label"] == "Examination"]["label_id"].iloc[0])
-        synth_rows = []
-        for t in _EXAM_SYNTHETIC:
-            synth_rows.append({
-                "text": t,
+    if AUGMENT_EXAM_HIGH and (df["label"] == "Examination").any():
+        exam_label_id = int(df.loc[df["label"] == "Examination", "label_id"].iloc[0])
+        synth_rows = [
+            {
+                "text": text,
                 "label": "Examination",
                 "label_id": exam_label_id,
-                "priority_id_fixed": 2,           # High
+                "priority": "High",
+                "priority_id_fixed": 2,
                 "priority_imputed": 0,
-                "word_count": len(t.split()),
-                "text_len": len(t),
-            })
+                "source": "synthetic",
+                "source_type": "synthetic",
+                "text_len": len(text),
+                "word_count": len(text.split()),
+            }
+            for text in _EXAM_SYNTHETIC
+        ]
         synth_df = pd.DataFrame(synth_rows)
-        # Fill any extra cols with NaN so concat works cleanly
         for col in df.columns:
             if col not in synth_df.columns:
                 synth_df[col] = None
+        synth_df = synth_df[df.columns]
         df = pd.concat([df, synth_df], ignore_index=True)
-        print(f"➕  Synthetic exam-High rows added: {len(synth_rows)}")
+        print(f"Added synthetic Examination/High rows: {len(synth_rows)}")
 
-    # --- derived cols ---
     df["text_len"] = df["text"].str.len().astype(int)
     df["word_count"] = df["text"].str.split().str.len().astype(int)
 
-    # --- duplicates + conflicts ---
     conflict = df.groupby("text")[["label_id", "priority_id_fixed"]].nunique().reset_index()
     conflicting = conflict[(conflict["label_id"] > 1) | (conflict["priority_id_fixed"] > 1)]
-    print(f"⚠️  Conflicting texts (label or priority): {len(conflicting)}")
+    print(f"Conflicting duplicate texts: {len(conflicting)}")
 
     before = len(df)
     df = df.drop_duplicates(subset=["text"], keep="first").copy()
-    print(f"🧹 Dropped duplicates: {before - len(df)}")
+    print(f"Dropped duplicate texts: {before - len(df)}")
 
-    # ── Summary ──────────────────────────────────────────────
-    print("\n📊 Final label distribution:")
+    print("\nFinal label distribution:")
     print(df["label"].value_counts().to_string())
-    print("\n📊 Final priority distribution:")
+    print("\nFinal priority distribution:")
     print(df["priority_id_fixed"].value_counts().sort_index().to_string())
-    print(f"\n📊 Examination + High rows: {len(df[(df['label']=='Examination') & (df['priority_id_fixed']==2)])}")
+    print(
+        f"\nExamination + High rows: {len(df[(df['label'] == 'Examination') & (df['priority_id_fixed'] == 2)])}"
+    )
 
-    # --- save cleaned dataset ---
-    data_dir = os.path.dirname(OUT_PATH) or "."
-    os.makedirs(data_dir, exist_ok=True)
+    os.makedirs(OUT_PATH.parent, exist_ok=True)
     df.to_csv(OUT_PATH, index=False)
-    print(f"\n💾 Saved cleaned dataset: {OUT_PATH}  rows: {len(df)}")
+    print(f"\nSaved cleaned dataset: {OUT_PATH} rows: {len(df)}")
 
-    # --- save mappings ---
     os.makedirs(OUT_DIR, exist_ok=True)
 
     id_to_label = (
@@ -278,50 +396,45 @@ def main():
         .to_dict()
     )
 
-    DEFAULT_PRIO_MAP = {0: "Low", 1: "Medium", 2: "High"}
+    default_prio_map = {0: "Low", 1: "Medium", 2: "High"}
+    id_to_priority = {}
+    for src_col in ("priority_fixed", "priority"):
+        if src_col in df.columns:
+            temp = df[["priority_id_fixed", src_col]].drop_duplicates().copy()
+            temp[src_col] = temp[src_col].astype(str).str.strip()
 
-    if "priority_fixed" in df.columns:
-        tmp = df[["priority_id_fixed", "priority_fixed"]].drop_duplicates().copy()
-        tmp["priority_fixed"] = tmp["priority_fixed"].astype(str).str.strip()
-
-        def _norm_prio(v):
-            if v is None:
+            def normalize_priority(value: str) -> str | None:
+                value = str(value).strip().lower()
+                if value in {"", "nan"}:
+                    return None
+                if value in {"low", "l", "0"}:
+                    return "Low"
+                if value in {"medium", "med", "m", "1"}:
+                    return "Medium"
+                if value in {"high", "h", "2"}:
+                    return "High"
                 return None
-            s = str(v).strip().lower()
-            if s in {"", "nan"}:
-                return None
-            if s in {"low", "l", "0"}:
-                return "Low"
-            if s in {"medium", "med", "m", "1"}:
-                return "Medium"
-            if s in {"high", "h", "2"}:
-                return "High"
-            return None
 
-        tmp["priority_fixed"] = tmp["priority_fixed"].map(_norm_prio)
-        id_to_priority = {
-            int(k): v
-            for k, v in (
-                tmp.dropna(subset=["priority_fixed"])
+            temp[src_col] = temp[src_col].map(normalize_priority)
+            mapped = (
+                temp.dropna(subset=[src_col])
                 .sort_values("priority_id_fixed")
-                .groupby("priority_id_fixed")["priority_fixed"]
+                .groupby("priority_id_fixed")[src_col]
                 .first()
-                .items()
+                .to_dict()
             )
-        }
-    else:
-        id_to_priority = {}
+            id_to_priority.update({int(k): v for k, v in mapped.items()})
 
-    for k, v in DEFAULT_PRIO_MAP.items():
-        id_to_priority.setdefault(k, v)
+    for key, value in default_prio_map.items():
+        id_to_priority.setdefault(key, value)
 
-    with open(os.path.join(OUT_DIR, "id_to_label.json"), "w", encoding="utf-8") as f:
-        json.dump({str(k): v for k, v in id_to_label.items()}, f, ensure_ascii=False, indent=2)
+    with open(OUT_DIR / "id_to_label.json", "w", encoding="utf-8") as file:
+        json.dump({str(k): v for k, v in id_to_label.items()}, file, ensure_ascii=False, indent=2)
 
-    with open(os.path.join(OUT_DIR, "id_to_priority.json"), "w", encoding="utf-8") as f:
-        json.dump({str(k): v for k, v in id_to_priority.items()}, f, ensure_ascii=False, indent=2)
+    with open(OUT_DIR / "id_to_priority.json", "w", encoding="utf-8") as file:
+        json.dump({str(k): v for k, v in id_to_priority.items()}, file, ensure_ascii=False, indent=2)
 
-    print(f"💾 Saved mappings → {OUT_DIR}")
+    print(f"Saved mappings to: {OUT_DIR}")
 
 
 if __name__ == "__main__":
