@@ -3,6 +3,7 @@
 Thumbs.db
 .vscode/
 .idea/
+*.code-workspace
 
 
 # Python
@@ -18,12 +19,16 @@ Thumbs.db
 **/.venv/
 **/venv/
 **/env/
+backend/env/
+backend/.python-version
 
 # Node / frontend
 **/node_modules/
 **/dist/
 **/.vite/
 **/coverage/
+frontend/.env.local
+frontend/.env.*.local
 
 # Logs
 **/*.log
@@ -43,9 +48,27 @@ yarn-error.log*
 # Local env files
 backend/.env
 frontend/.env
+*.env.local
+*.env.*.local
 
 # Trained model artifacts
 backend/outputs/
 
 # Large local datasets
 backend/data/complaints.csv
+backend/data/dataset.csv
+backend/data/dataset.xlsx
+backend/data/dataset.xls
+backend/data/dataset_clean.csv
+backend/data/dataset_corrected.csv
+backend/data/train.csv
+backend/data/val.csv
+backend/data/test.csv
+backend/data/pseudo_feedback.csv
+backend/data/frontend_feedback.csv
+
+# Local scratch files
+**/tempCodeRunnerFile.py
+
+# Exclude research paper folder from GitHub
+paper/

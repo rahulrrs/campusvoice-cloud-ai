@@ -24,6 +24,23 @@ This generates `outputs/baseline_eval.json` with:
 - Linear SVM baseline
 - Logistic Regression baseline
 
+## Fairness evaluation
+
+Run:
+
+```bash
+python scripts/evaluate_fairness.py
+```
+
+This generates `outputs/fairness_eval.json` with subgroup label and priority metrics across:
+
+- anonymity groups
+- detected language groups
+- complaint categories
+- available user groups
+
+The current evaluation is designed to surface disparities for review rather than certify fairness.
+
 ## Reported metrics
 
 - `accuracy`

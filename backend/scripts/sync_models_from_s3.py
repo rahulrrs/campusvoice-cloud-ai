@@ -19,7 +19,7 @@ def env_flag(name: str, default: bool = False) -> bool:
 def required_model_dirs() -> list[str]:
     raw = os.getenv(
         "MODEL_REQUIRED_DIRS",
-        "distilbert_cfpb_mlm,edu_classifier_multitask",
+        "general_complaint_model,edu_classifier_multitask",
     )
     return [item.strip() for item in raw.split(",") if item.strip()]
 

@@ -27,8 +27,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 from psycopg2.extras import Json, RealDictCursor
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 from transformers import AutoModel, AutoTokenizer
 
 import torch
@@ -43,12 +41,30 @@ try:
 except Exception:
     load_safetensors_file = None
 
+try:
+    from langdetect import detect as langdetect_detect
+except Exception:
+    langdetect_detect = None
+
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / ".env")
 
 APP_ROOT = Path(__file__).resolve().parents[1]
+if str(APP_ROOT) not in sys.path:
+    sys.path.insert(0, str(APP_ROOT))
+
+from src.utils.complaint_ml import (
+    build_explainability_payload,
+    build_metadata_feature_map,
+    classify_attachment_kind,
+    feature_map_to_vector,
+    normalize_text as normalize_ml_text,
+    scale_feature_vector,
+)
+from src.utils.semantic_duplicates import SemanticDuplicateEngine
 
 # ========= ML CONFIG =========
 MODEL_DIR = APP_ROOT / "outputs" / "edu_classifier_multitask"
+METADATA_CONFIG_PATH = MODEL_DIR / "metadata_config.json"
 MAX_LENGTH = 256
 LABEL_THRESHOLD = 0.55
 PRIO_THRESHOLD = 0.50
@@ -57,26 +73,28 @@ AUTO_RETRAIN_STATE_PATH = MODEL_DIR / "api_auto_retrain_state.json"
 AUTO_RETRAIN_MIN_NEW_FEEDBACK = 30
 
 LABEL_TO_DEPT = {
-    "Academic": "Academic Affairs",
     "Faculty": "Academic Affairs",
+    "Attendance": "Academic Affairs",
     "Examination": "Examination Cell",
     "IT & Digital Services": "IT Support",
     "Fees": "Accounts",
-    "Hostel": "Hostel Office",
-    "Mess / Canteen": "Catering/Mess",
+    "Infrastructure": "Maintenance",
     "Library": "Library",
     "Placement & Career Services": "Career Services",
-    "Transport": "Transport Office",
-    "Health Services": "Health Center",
+    "Transportation": "Transport Office",
     "Safety & Security": "Security",
-    "Scholarship": "Scholarship Office",
-    "Administration": "Admin Office",
     "Certificate & Records": "Admin Office",
     "Discipline": "Disciplinary Committee",
-    "Attendance": "Academic Affairs",
-    "Infrastructure": "Maintenance",
-    "Lab": "Lab Incharge",
     "Lost & Found": "Helpdesk",
+    "Ragging & Harassment": "Disciplinary Committee",
+    "Academic": "Academic Affairs",
+    "Administration": "Admin Office",
+    "Health Services": "Health Center",
+    "Hostel": "Hostel Office",
+    "Lab": "Lab Incharge",
+    "Mess / Canteen": "Catering/Mess",
+    "Scholarship": "Scholarship Office",
+    "Transport": "Transport Office",
     "Ragging / Harassment": "Disciplinary Committee",
     "Other": "Helpdesk",
     "Unknown": "Helpdesk",
@@ -88,7 +106,7 @@ _UNKNOWN_LABEL_RULES: list[tuple[str, re.Pattern[str]]] = [
     ("Mess / Canteen", re.compile(r"\b(mess|canteen|food|meal|hygiene)\b", re.I)),
     ("Library", re.compile(r"\b(library|book|reading\s*room)\b", re.I)),
     ("Lab", re.compile(r"\b(lab|laboratory|practical|experiment)\b", re.I)),
-    ("Transport", re.compile(r"\b(bus|transport|shuttle|route|driver)\b", re.I)),
+    ("Transportation", re.compile(r"\b(bus|transport|shuttle|route|driver)\b", re.I)),
     ("IT & Digital Services", re.compile(r"\b(portal|website|login|server|app|network|wifi|wi-?fi)\b", re.I)),
     ("Attendance", re.compile(r"\b(attendance|absent|present)\b", re.I)),
     ("Examination", re.compile(r"\b(exam|hall\s*ticket|timetable|result|revaluation)\b", re.I)),
@@ -96,7 +114,7 @@ _UNKNOWN_LABEL_RULES: list[tuple[str, re.Pattern[str]]] = [
     ("Scholarship", re.compile(r"\b(scholarship|stipend|financial\s*aid|bursary)\b", re.I)),
     ("Placement & Career Services", re.compile(r"\b(placement|internship|career|recruit|training)\b", re.I)),
     ("Safety & Security", re.compile(r"\b(safety|security|threat|unsafe|violence|assault)\b", re.I)),
-    ("Ragging / Harassment", re.compile(r"\b(ragging|harass|bully)\b", re.I)),
+    ("Ragging & Harassment", re.compile(r"\b(ragging|harass|bully)\b", re.I)),
     ("Lost & Found", re.compile(r"\b(lost|missing|stolen|theft|wallet|id\s*card)\b", re.I)),
 ]
 
@@ -122,7 +140,7 @@ class Settings(BaseModel):
     presigned_url_expires_seconds: int = Field(default=900)
     admin_emails: str = Field(default="")
     super_admin_emails: str = Field(default="")
-    backbone_model_name: str = Field(default="distilbert-base-uncased")
+    backbone_model_name: str = Field(default="roberta-base")
     backbone_model_dir: str = Field(default=str(APP_ROOT / "outputs" / "general_complaint_model"))
     chatbot_provider: str = Field(default="gemini")
     gemini_api_key: str = Field(default="")
@@ -144,7 +162,7 @@ def get_settings() -> Settings:
         presigned_url_expires_seconds=int(os.getenv("PRESIGNED_URL_EXPIRES_SECONDS", "900")),
         admin_emails=os.getenv("ADMIN_EMAILS", ""),
         super_admin_emails=os.getenv("SUPER_ADMIN_EMAILS", ""),
-        backbone_model_name=os.getenv("BACKBONE_MODEL_NAME", "distilbert-base-uncased"),
+        backbone_model_name=os.getenv("BACKBONE_MODEL_NAME", "roberta-base"),
         backbone_model_dir=os.getenv(
             "BACKBONE_MODEL_DIR",
             str(APP_ROOT / "outputs" / "general_complaint_model"),
@@ -157,19 +175,37 @@ def get_settings() -> Settings:
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
-LEGACY_BACKBONE_MODEL_DIR = APP_ROOT / "outputs" / "distilbert_cfpb_mlm"
+duplicate_engine = SemanticDuplicateEngine()
+
+
+def _resolve_backbone_source() -> str:
+    default_backbone_dir = APP_ROOT / "outputs" / "general_complaint_model"
+    candidate = Path(str(settings.backbone_model_dir).strip()) if str(settings.backbone_model_dir).strip() else None
+    if candidate is not None:
+        try:
+            if candidate.resolve() == MODEL_DIR.resolve():
+                logger.warning(
+                    "BACKBONE_MODEL_DIR points to edu_classifier_multitask; "
+                    "using general_complaint_model as the backbone source instead."
+                )
+                candidate = default_backbone_dir
+        except Exception:
+            pass
+    if candidate is not None and candidate.is_dir():
+        return str(candidate)
+    if default_backbone_dir.is_dir():
+        if candidate is not None:
+            logger.warning(
+                "Configured backbone directory '%s' not found. Falling back to '%s'.",
+                candidate,
+                default_backbone_dir,
+            )
+        return str(default_backbone_dir)
+    return str(settings.backbone_model_name).strip()
 
 
 def _cors_origins_from_env(raw: str) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
-
-
-def _resolve_backbone_dir() -> str:
-    if os.path.isdir(settings.backbone_model_dir):
-        return settings.backbone_model_dir
-    if LEGACY_BACKBONE_MODEL_DIR.is_dir():
-        return str(LEGACY_BACKBONE_MODEL_DIR)
-    return settings.backbone_model_name
 
 
 app = FastAPI(title="Complaint Routing and Management API")
@@ -681,6 +717,26 @@ def _serialize_audit_row(row: dict[str, Any]) -> dict[str, Any]:
     return serialized
 
 
+def _get_owned_complaint(
+    cur: RealDictCursor,
+    complaint_id: str,
+    user_id: str,
+    columns: str = "id",
+) -> dict[str, Any]:
+    cur.execute(
+        f"""
+        SELECT {columns}
+        FROM complaints
+        WHERE id = %s::uuid AND user_id = %s
+        """,
+        (complaint_id, user_id),
+    )
+    row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+    return row
+
+
 def _notification_item(
     *,
     complaint_id: str,
@@ -863,38 +919,101 @@ def _recover_fuzzy_category_label(text: str, default_label: str) -> str:
 def _attachment_metadata_analysis(
     attachment_keys: list[str],
     evidence_types: list[str],
+    attachment_contexts: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     entries: list[dict[str, Any]] = []
     warnings: list[str] = []
     image_count = 0
+    audio_count = 0
+    document_count = 0
+    context_by_key: dict[str, dict[str, Any]] = {}
+    for item in attachment_contexts or []:
+        if isinstance(item, dict):
+            key = str(item.get("key") or "").strip()
+            if key:
+                context_by_key[key] = item
 
     for key in attachment_keys:
         file_name = key.split("/")[-1]
         ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
-        is_image = ext in {"jpg", "jpeg", "png", "webp", "gif", "bmp", "heic"}
-        if is_image:
+        kind = classify_attachment_kind(file_name)
+        if kind == "image":
             image_count += 1
+        elif kind == "audio":
+            audio_count += 1
+        elif kind == "document":
+            document_count += 1
         entry_warnings: list[str] = []
-        if is_image and re.fullmatch(r"(img|image|photo|scan)[-_]?\d*", file_name.rsplit(".", 1)[0].lower()):
+        if kind == "image" and re.fullmatch(r"(img|image|photo|scan)[-_]?\d*", file_name.rsplit(".", 1)[0].lower()):
             entry_warnings.append("Generic image filename; context may need manual verification.")
+        context_item = context_by_key.get(key, {})
+        has_extracted_text = any(
+            str(context_item.get(field) or "").strip()
+            for field in ("ocr_text", "transcript_text", "image_summary")
+        )
         entries.append(
             {
                 "file_name": file_name,
                 "extension": ext or "unknown",
-                "kind": "image" if is_image else "file",
+                "kind": kind,
+                "has_extracted_text": bool(has_extracted_text),
                 "warnings": entry_warnings,
             }
         )
 
     if image_count:
-        warnings.append("Image verification uses basic metadata checks only; manual review may still be needed.")
+        warnings.append("Image evidence is available; extracted OCR or summaries should be reviewed when present.")
     if "image" in evidence_types and image_count == 0:
         warnings.append("Image evidence was declared but no image attachment key was found.")
+    if "audio" in evidence_types and audio_count == 0:
+        warnings.append("Audio evidence was declared but no audio attachment key was found.")
 
     return {
         "attachments": entries,
         "image_count": image_count,
+        "audio_count": audio_count,
+        "document_count": document_count,
         "warnings": warnings,
+    }
+
+
+def _analyze_multimodal_evidence(
+    attachment_keys: list[str],
+    evidence_types: list[str],
+    attachment_contexts: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    contexts = [item for item in (attachment_contexts or []) if isinstance(item, dict)]
+    extracted_chunks: list[str] = []
+    signals: list[str] = []
+    for item in contexts:
+        ocr_text = str(item.get("ocr_text") or "").strip()
+        transcript_text = str(item.get("transcript_text") or "").strip()
+        image_summary = str(item.get("image_summary") or "").strip()
+        if ocr_text:
+            extracted_chunks.append(ocr_text)
+            signals.append("ocr")
+        if transcript_text:
+            extracted_chunks.append(transcript_text)
+            signals.append("speech_to_text")
+        if image_summary:
+            extracted_chunks.append(image_summary)
+            signals.append("image_summary")
+
+    attachment_kinds = [classify_attachment_kind(key) for key in attachment_keys]
+    summary_parts: list[str] = []
+    if attachment_kinds:
+        summary_parts.append(f"{len(attachment_kinds)} attachment(s)")
+    if signals:
+        summary_parts.append("using " + ", ".join(sorted(set(signals))))
+    elif attachment_kinds:
+        summary_parts.append("using filename and evidence metadata only")
+
+    return {
+        "attachment_count": len(attachment_keys),
+        "evidence_types": list(dict.fromkeys(str(item) for item in evidence_types if str(item).strip())),
+        "available_modalities": sorted(set(attachment_kinds + signals)),
+        "summary": ", ".join(summary_parts) if summary_parts else "No multimodal evidence supplied.",
+        "extracted_text": "\n\n".join(chunk for chunk in extracted_chunks if chunk)[:3000],
     }
 
 
@@ -954,6 +1073,8 @@ def _detect_fairness_flags(
     *,
     category: str,
     is_anonymous: bool,
+    source_language: str,
+    user_group: str,
     abuse_score: float,
     spam_score: float,
     urgency_score: float,
@@ -965,8 +1086,14 @@ def _detect_fairness_flags(
         flags.append("sensitive-category")
     if is_anonymous and category in sensitive_categories:
         flags.append("anonymous-sensitive")
+    if source_language and source_language.lower() != "en":
+        flags.append("non_english_submission")
+    if user_group == "repeat_submitter":
+        flags.append("repeat_submitter_monitor")
     if spam_score >= 0.35 and category in sensitive_categories:
         flags.append("review-spam-on-sensitive")
+    if spam_score >= 0.35 and is_anonymous:
+        flags.append("anonymous_spam_check")
     if abuse_score >= 0.35 and urgency_score >= 0.55:
         flags.append("emotionally-charged-urgent")
     if duplicate_score >= 0.9 and urgency_score >= 0.55:
@@ -985,6 +1112,8 @@ def _build_automation_decision(
     sentiment = analysis.get("sentiment", {}) if isinstance(analysis, dict) else {}
     abuse = analysis.get("abuse", {}) if isinstance(analysis, dict) else {}
     duplicate = analysis.get("duplicate_detection", {}) if isinstance(analysis, dict) else {}
+    source_language = str(analysis.get("source_language") or "en")
+    user_behavior = abuse.get("user_behavior", {}) if isinstance(abuse, dict) else {}
 
     label = str(classification.get("label") or fallback_category or "Uncategorized").strip()
     if label.lower() in {"unknown", "uncategorized"}:
@@ -1002,6 +1131,8 @@ def _build_automation_decision(
     spam_score = _clamp_score(float(abuse.get("spam_score", 0.0) or 0.0))
     duplicate_score = _clamp_score(float(duplicate.get("score", 0.0) or 0.0))
     is_duplicate = bool(duplicate.get("is_duplicate", False))
+    recent_submissions = int(user_behavior.get("recent_submissions_30d", 0) or 0)
+    user_group = "repeat_submitter" if recent_submissions >= 3 else "standard_submitter"
 
     routing_confidence = round((label_confidence * 0.65) + (priority_confidence * 0.35), 4)
     risk_score = round(
@@ -1019,6 +1150,8 @@ def _build_automation_decision(
     fairness_flags = _detect_fairness_flags(
         category=label,
         is_anonymous=is_anonymous,
+        source_language=source_language,
+        user_group=user_group,
         abuse_score=toxicity_score,
         spam_score=spam_score,
         urgency_score=urgency_score,
@@ -1066,6 +1199,11 @@ def _build_automation_decision(
             "duplicate_score": duplicate_score,
             "is_duplicate": is_duplicate,
         },
+        "fairness_context": {
+            "source_language": source_language,
+            "user_group": user_group,
+            "is_anonymous": bool(is_anonymous),
+        },
         "explanation": (
             f"Auto-routed to {department} from category {label} with {priority} priority."
             if decision_state == "routed"
@@ -1088,7 +1226,7 @@ def _build_automation_decision(
         "escalation_level": escalation_level,
         "sla_due_at": _calculate_sla_due_at(priority, label, risk_score),
         "quarantined_reason": quarantined_reason,
-        "auto_route_version": "rules-v1",
+        "auto_route_version": "rules-v2-metadata",
     }
 
 
@@ -1172,6 +1310,15 @@ class ComplaintIn(BaseModel):
     text: str
 
 
+class AttachmentContext(BaseModel):
+    key: str | None = None
+    mime_type: str | None = None
+    language: str | None = None
+    ocr_text: str | None = None
+    transcript_text: str | None = None
+    image_summary: str | None = None
+
+
 class ComplaintCreate(BaseModel):
     title: str
     description: str
@@ -1181,6 +1328,7 @@ class ComplaintCreate(BaseModel):
     is_anonymous: bool = True
     attachments: list[str] = Field(default_factory=list)
     evidence_types: list[str] = Field(default_factory=list)
+    attachment_contexts: list[AttachmentContext] = Field(default_factory=list)
     source_language: str | None = None
     analysis: dict[str, Any] = Field(default_factory=dict)
 
@@ -1219,6 +1367,12 @@ class AutoClassifyRequest(BaseModel):
 class ComplaintAnalysisRequest(BaseModel):
     title: str = ""
     description: str = ""
+    attachments: list[str] = Field(default_factory=list)
+    evidence_types: list[str] = Field(default_factory=list)
+    source_language: str | None = None
+    is_anonymous: bool = False
+    submitted_at: str | None = None
+    attachment_contexts: list[AttachmentContext] = Field(default_factory=list)
 
 
 class ComplaintUpdateCreate(BaseModel):
@@ -1270,6 +1424,8 @@ _model_error: str | None = None
 tokenizer = None
 model = None
 device = None
+metadata_config: dict[str, Any] | None = None
+model_uses_metadata = False
 _gemini_client = None
 id_to_label: dict[int, str] = {}
 id_to_priority: dict[int, str] = {}
@@ -1427,6 +1583,7 @@ def _dedupe_keep_order(values: list[str]) -> list[str]:
 
 def _dataset_category_names() -> list[str]:
     dataset_candidates = [
+        APP_ROOT / "data" / "dataset_corrected.csv",
         APP_ROOT / "data" / "dataset_clean.csv",
         APP_ROOT / "data" / "dataset.csv",
     ]
@@ -1434,9 +1591,16 @@ def _dataset_category_names() -> list[str]:
         if not path.exists():
             continue
         try:
-            df = pd.read_csv(path, usecols=["label"], low_memory=False)
+            df = pd.read_csv(path, low_memory=False)
+            label_col = None
+            for candidate in ("label", "Category", "category"):
+                if candidate in df.columns:
+                    label_col = candidate
+                    break
+            if label_col is None:
+                continue
             labels = _dedupe_keep_order(
-                sorted({str(v).strip() for v in df["label"].dropna().tolist() if str(v).strip()})
+                sorted({str(v).strip() for v in df[label_col].dropna().tolist() if str(v).strip()})
             )
             if labels:
                 return labels
@@ -1588,31 +1752,70 @@ def _maybe_trigger_auto_retrain() -> None:
     threading.Thread(target=_run_retrain_job, daemon=True).start()
 
 
-class DistilBertMultiTask(nn.Module):
-    def __init__(self, backbone_name: str, num_labels: int, num_priority: int):
+class EncoderMultiTask(nn.Module):
+    def __init__(
+        self,
+        backbone_name: str,
+        num_labels: int,
+        num_priority: int,
+        label_metadata_dim: int = 0,
+        priority_metadata_dim: int = 0,
+    ):
         super().__init__()
         self.backbone = AutoModel.from_pretrained(backbone_name)
         hidden = self.backbone.config.hidden_size
+        self.label_metadata_dim = label_metadata_dim
+        self.priority_metadata_dim = priority_metadata_dim
 
         # Must match scripts/train_multitask.py architecture.
         self.dropout = nn.Dropout(0.1)
 
         self.label_dropout = nn.Dropout(0.2)
+        if label_metadata_dim > 0:
+            self.label_meta_proj = nn.Sequential(
+                nn.Linear(label_metadata_dim, hidden),
+                nn.LayerNorm(hidden),
+                nn.GELU(),
+                nn.Dropout(0.1),
+            )
+        else:
+            self.label_meta_proj = None
         self.label_hidden = nn.Linear(hidden, hidden // 2)
         self.label_head = nn.Linear(hidden // 2, num_labels)
 
+        if priority_metadata_dim > 0:
+            self.priority_meta_proj = nn.Sequential(
+                nn.Linear(priority_metadata_dim, hidden // 4),
+                nn.LayerNorm(hidden // 4),
+                nn.GELU(),
+                nn.Dropout(0.1),
+            )
+            prio_input = hidden + (hidden // 4)
+        else:
+            self.priority_meta_proj = None
+            prio_input = hidden
+
         self.prio_dropout = nn.Dropout(0.2)
-        self.prio_hidden = nn.Linear(hidden, hidden // 4)
+        self.prio_hidden = nn.Linear(prio_input, hidden // 4)
         self.prio_head = nn.Linear(hidden // 4, num_priority)
         self.act = nn.GELU()
 
-    def forward(self, input_ids=None, attention_mask=None, **kwargs):
+    def forward(self, input_ids=None, attention_mask=None, metadata_features=None, **kwargs):
         out = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
         pooled = out.last_hidden_state[:, 0]
         pooled = self.dropout(pooled)
 
-        label_logits = self.label_head(self.act(self.label_hidden(self.label_dropout(pooled))))
-        prio_logits = self.prio_head(self.act(self.prio_hidden(self.prio_dropout(pooled))))
+        label_input = pooled
+        if self.label_metadata_dim > 0 and metadata_features is not None:
+            label_input = label_input + self.label_meta_proj(metadata_features.float())
+        label_logits = self.label_head(self.act(self.label_hidden(self.label_dropout(label_input))))
+        priority_input = pooled
+        if self.priority_metadata_dim > 0 and metadata_features is not None:
+            priority_input = torch.cat(
+                [priority_input, self.priority_meta_proj(metadata_features.float())],
+                dim=-1,
+            )
+        prio_logits = self.prio_head(self.act(self.prio_hidden(self.prio_dropout(priority_input))))
         return label_logits, prio_logits
 
 
@@ -1624,6 +1827,8 @@ def _load_model_once() -> None:
     global device
     global id_to_label
     global id_to_priority
+    global metadata_config
+    global model_uses_metadata
 
     if _model_ready:
         return
@@ -1636,22 +1841,24 @@ def _load_model_once() -> None:
             with open(MODEL_DIR / "id_to_priority.json", "r", encoding="utf-8") as f:
                 id_to_priority = {int(k): v for k, v in json.load(f).items()}
 
-            if (MODEL_DIR / "config.json").exists():
-                backbone_name = str(MODEL_DIR)
-            else:
-                backbone_name = _resolve_backbone_dir()
-
-            tok_src = (
-                str(MODEL_DIR)
-                if (MODEL_DIR / "tokenizer_config.json").exists()
-                else backbone_name
-            )
+            tokenizer_config_path = MODEL_DIR / "tokenizer_config.json"
+            if not tokenizer_config_path.exists():
+                raise FileNotFoundError(
+                    f"Missing classifier tokenizer config: {tokenizer_config_path}. "
+                    "The edu classifier tokenizer must be loaded from its own saved model directory."
+                )
+            backbone_name = _resolve_backbone_source()
+            if not backbone_name:
+                raise FileNotFoundError(
+                    "Missing classifier backbone source. Set BACKBONE_MODEL_DIR or BACKBONE_MODEL_NAME."
+                )
+            tok_src = str(MODEL_DIR)
             tokenizer = AutoTokenizer.from_pretrained(tok_src)
-            model = DistilBertMultiTask(
-                backbone_name,
-                num_labels=len(id_to_label),
-                num_priority=len(id_to_priority),
-            )
+            if METADATA_CONFIG_PATH.exists():
+                with open(METADATA_CONFIG_PATH, "r", encoding="utf-8") as f:
+                    metadata_config = json.load(f)
+            else:
+                metadata_config = None
 
             state_path = MODEL_DIR / "pytorch_model.bin"
             safetensors_path = MODEL_DIR / "model.safetensors"
@@ -1669,8 +1876,22 @@ def _load_model_once() -> None:
                     f"Missing model weights. Expected one of: {state_path}, {safetensors_path}"
                 )
 
-            for k in ("label_weights", "priority_weights"):
+            for k in ("label_weights", "priority_weights", "priority_cost_matrix"):
                 state.pop(k, None)
+            has_label_meta_layers = any(key.startswith("label_meta_proj.") for key in state)
+            model_uses_metadata = any(key.startswith("priority_meta_proj.") for key in state)
+            metadata_dim = (
+                len(metadata_config.get("feature_names", []))
+                if isinstance(metadata_config, dict)
+                else 0
+            )
+            model = EncoderMultiTask(
+                backbone_name,
+                num_labels=len(id_to_label),
+                num_priority=len(id_to_priority),
+                label_metadata_dim=metadata_dim if has_label_meta_layers else 0,
+                priority_metadata_dim=metadata_dim if model_uses_metadata else 0,
+            )
             model.load_state_dict(state, strict=True)
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             model.to(device)
@@ -1974,7 +2195,7 @@ _LANGUAGE_HINTS: dict[str, list[str]] = {
 
 
 def _normalize_text(text: str) -> str:
-    return re.sub(r"\s+", " ", (text or "").strip()).lower()
+    return normalize_ml_text(text)
 
 
 def _tokenize(text: str) -> list[str]:
@@ -1983,6 +2204,13 @@ def _tokenize(text: str) -> list[str]:
 
 def _detect_language(text: str) -> str:
     lower = _normalize_text(text)
+    if langdetect_detect is not None and lower:
+        try:
+            detected = str(langdetect_detect(lower)).lower()
+            if detected:
+                return detected
+        except Exception:
+            pass
     scores = {
         lang: sum(1 for token in hints if token in lower)
         for lang, hints in _LANGUAGE_HINTS.items()
@@ -2083,49 +2311,7 @@ def _vector_duplicate_search(
     text: str,
     rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    candidate_texts = [
-        f"{row.get('title', '')}\n\n{row.get('description', '')}".strip()
-        for row in rows
-    ]
-    if not text.strip() or not candidate_texts:
-        return {
-            "is_duplicate": False,
-            "score": 0.0,
-            "method": "tfidf-fallback",
-            "matches": [],
-        }
-
-    method = "tfidf-fallback"
-    corpus = [text, *candidate_texts]
-    vectorizer = TfidfVectorizer(stop_words="english", ngram_range=(1, 2), min_df=1)
-    matrix = vectorizer.fit_transform(corpus)
-    similarities = cosine_similarity(matrix[0:1], matrix[1:]).flatten()
-    ranked = np.argsort(similarities)[::-1][:3]
-
-    matches: list[dict[str, Any]] = []
-    top_score = 0.0
-    for idx in ranked:
-        score = float(similarities[idx])
-        row = rows[int(idx)]
-        if score <= 0:
-            continue
-        top_score = max(top_score, score)
-        matches.append(
-            {
-                "id": row["id"],
-                "title": row.get("title"),
-                "category": row.get("category"),
-                "status": row.get("status"),
-                "score": round(score, 4),
-            }
-        )
-
-    return {
-        "is_duplicate": top_score >= 0.82,
-        "score": round(top_score, 4),
-        "method": method,
-        "matches": matches,
-    }
+    return duplicate_engine.search(text, rows)
 
 
 def _find_duplicate_candidates(text: str, user_id: str | None = None) -> dict[str, Any]:
@@ -2201,7 +2387,18 @@ def _build_recommendations(
     return recommendations
 
 
-def _analyze_text_bundle(title: str, description: str, user_id: str | None = None) -> dict[str, Any]:
+def _analyze_text_bundle(
+    title: str,
+    description: str,
+    user_id: str | None = None,
+    *,
+    attachments: list[str] | None = None,
+    evidence_types: list[str] | None = None,
+    attachment_contexts: list[dict[str, Any]] | None = None,
+    source_language: str | None = None,
+    is_anonymous: bool = False,
+    submitted_at: str | None = None,
+) -> dict[str, Any]:
     text = f"{title.strip()}\n\n{description.strip()}".strip()
     prediction = {
         "label": "Unknown",
@@ -2212,12 +2409,24 @@ def _analyze_text_bundle(title: str, description: str, user_id: str | None = Non
     }
     if text:
         try:
-            prediction = predict_one(text)
+            prediction = predict_one(
+                text,
+                attachments=attachments,
+                evidence_types=evidence_types,
+                attachment_contexts=attachment_contexts,
+                is_anonymous=is_anonymous,
+                submitted_at=submitted_at,
+            )
         except Exception:
             # Keep complaint flows working even if ML weights are unavailable.
             pass
     sentiment = _sentiment_analysis(text)
     abuse = _abuse_analysis(text)
+    multimodal_evidence = _analyze_multimodal_evidence(
+        attachments or [],
+        evidence_types or [],
+        attachment_contexts or [],
+    )
     try:
         abuse["user_behavior"] = _user_behavior_risk(user_id)
     except Exception:
@@ -2253,16 +2462,33 @@ def _analyze_text_bundle(title: str, description: str, user_id: str | None = Non
             "duplicate_detection": duplicate,
         }
     )
+    feature_map = build_metadata_feature_map(
+        text=text,
+        attachments=attachments or [],
+        evidence_types=evidence_types or [],
+        attachment_contexts=attachment_contexts or [],
+        is_anonymous=is_anonymous,
+        submitted_at=submitted_at,
+    )
+    explainability = build_explainability_payload(
+        text=text,
+        classification=prediction,
+        feature_map=feature_map,
+        duplicate_detection=duplicate,
+        multimodal_evidence=multimodal_evidence,
+    )
 
     return {
         "classification": prediction,
         "sentiment": sentiment,
         "abuse": abuse,
         "duplicate_detection": duplicate,
+        "multimodal_evidence": multimodal_evidence,
+        "explainability": explainability,
         "recommendations": recommendations,
         "knowledge_graph": knowledge_graph,
         "submission_guard": submission_guard,
-        "source_language": _detect_language(text),
+        "source_language": source_language or _detect_language(text),
     }
 
 
@@ -2795,9 +3021,106 @@ def _compose_analysis_driven_reply(
     return core, follow_ups, suggested_title
 
 
-def predict_one(text: str):
+def _contextual_priority_adjustment(
+    priority: str,
+    priority_confidence: float,
+    feature_map: dict[str, float],
+    multimodal_evidence: dict[str, Any] | None = None,
+) -> tuple[str, float]:
+    normalized = str(priority or "medium").strip().lower()
+    score = {"low": 0.2, "medium": 0.5, "high": 0.82}.get(normalized, 0.5)
+    score = max(score, float(priority_confidence or 0.0))
+    score += min(0.18, feature_map.get("urgency_term_hits", 0.0) * 0.05)
+    score += min(0.14, feature_map.get("deadline_term_hits", 0.0) * 0.05)
+    score += min(0.10, feature_map.get("attachment_count", 0.0) * 0.03)
+    score += min(0.08, feature_map.get("harassment_term_hits", 0.0) * 0.04)
+    if "speech_to_text" in (multimodal_evidence or {}).get("available_modalities", []):
+        score += 0.03
+    if "ocr" in (multimodal_evidence or {}).get("available_modalities", []):
+        score += 0.03
+
+    if score >= 0.78:
+        return "high", round(min(1.0, score), 4)
+    if score <= 0.34:
+        return "low", round(max(0.0, score), 4)
+    return "medium", round(min(1.0, max(0.35, score)), 4)
+
+
+def _apply_obvious_label_rule(text: str, current_label: str) -> str:
+    normalized = str(text or "").lower()
+    if re.search(r"\b(hall ticket|admit card|result|revaluation|exam seating|exam schedule|grade boundaries?)\b", normalized):
+        return "Examination"
+    if re.search(r"\b(certificate|marksheet|transcript|degree|records?|withheld originals?)\b", normalized):
+        return "Certificate & Records"
+    if re.search(r"\b(ragging|harass|threat|violence|assault)\b", normalized):
+        return "Ragging & Harassment"
+    if re.search(r"\b(faculty|professor|teacher|instructor|office hours)\b", normalized):
+        return "Faculty"
+    return current_label
+
+
+def _apply_obvious_priority_rule(text: str, current_label: str, current_priority: str) -> str:
+    normalized = str(text or "").lower()
+    high_signals = [
+        "marks affected",
+        "internal score",
+        "attendance shortage",
+        "unable to access",
+        "cannot access",
+        "blocked",
+        "not credited",
+        "unsafe",
+        "harassment",
+        "ragging",
+        "threat",
+        "fumes",
+        "headache",
+    ]
+    medium_signals = [
+        "delay",
+        "repeated",
+        "again",
+        "still not resolved",
+        "for the past",
+        "inconvenience",
+        "frustrating",
+    ]
+    low_signals = [
+        "not a big issue",
+        "slightly",
+        "minor",
+        "confusion",
+    ]
+    if any(signal in normalized for signal in high_signals):
+        return "high"
+    if current_label == "Examination" and any(signal in normalized for signal in ["hall ticket", "result", "revaluation", "miss exam"]):
+        return "high"
+    if any(signal in normalized for signal in medium_signals):
+        return "medium"
+    if any(signal in normalized for signal in low_signals):
+        return "low"
+    return current_priority
+
+
+def predict_one(
+    text: str,
+    *,
+    attachments: list[str] | None = None,
+    evidence_types: list[str] | None = None,
+    attachment_contexts: list[dict[str, Any]] | None = None,
+    is_anonymous: bool = False,
+    submitted_at: str | None = None,
+):
     if not _model_ready:
         _load_model_once()
+    feature_map = build_metadata_feature_map(
+        text=text,
+        attachments=attachments or [],
+        evidence_types=evidence_types or [],
+        attachment_contexts=attachment_contexts or [],
+        is_anonymous=is_anonymous,
+        submitted_at=submitted_at,
+    )
     with torch.no_grad():
         enc = tokenizer(
             [text],
@@ -2806,8 +3129,15 @@ def predict_one(text: str):
             max_length=MAX_LENGTH,
             return_tensors="pt",
         ).to(device)
+        metadata_tensor = None
+        if model_uses_metadata and isinstance(metadata_config, dict):
+            metadata_vector = scale_feature_vector(
+                feature_map_to_vector(feature_map, metadata_config.get("feature_names")),
+                metadata_config,
+            )
+            metadata_tensor = torch.tensor([metadata_vector], dtype=torch.float32, device=device)
 
-        label_logits, prio_logits = model(**enc)
+        label_logits, prio_logits = model(**enc, metadata_features=metadata_tensor)
 
         label_probs = torch.softmax(label_logits, dim=-1).cpu().numpy()[0]
         prio_probs = torch.softmax(prio_logits, dim=-1).cpu().numpy()[0]
@@ -2828,10 +3158,18 @@ def predict_one(text: str):
         label = _recover_unknown_label(text, raw_label)
     if label in {"Unknown", "Other", "Uncategorized"} or lconf < 0.7:
         label = _recover_fuzzy_category_label(text, label)
+    label = _apply_obvious_label_rule(text, label)
     if pconf < PRIO_THRESHOLD and priority.strip().lower() not in {"low", "medium", "high"}:
         priority = "medium"
     if priority.strip().lower() not in {"low", "medium", "high"}:
         priority = "medium"
+    multimodal_evidence = _analyze_multimodal_evidence(
+        attachments or [],
+        evidence_types or [],
+        attachment_contexts or [],
+    )
+    priority, pconf = _contextual_priority_adjustment(priority, pconf, feature_map, multimodal_evidence)
+    priority = _apply_obvious_priority_rule(text, label, priority)
 
     dept = LABEL_TO_DEPT.get(label, "Helpdesk")
     return {
@@ -3104,7 +3442,17 @@ def analyze_complaint(
     payload: ComplaintAnalysisRequest,
     current_user: CurrentUser = Depends(get_current_user),
 ):
-    return _analyze_text_bundle(payload.title, payload.description, user_id=current_user.user_id)
+    return _analyze_text_bundle(
+        payload.title,
+        payload.description,
+        user_id=current_user.user_id,
+        attachments=payload.attachments,
+        evidence_types=payload.evidence_types,
+        attachment_contexts=[item.model_dump() for item in payload.attachment_contexts],
+        source_language=payload.source_language,
+        is_anonymous=payload.is_anonymous,
+        submitted_at=payload.submitted_at,
+    )
 
 
 @app.get("/complaints")
@@ -3156,24 +3504,20 @@ def get_complaint_detail(
 ):
     with get_db_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT id, user_id, title, description, category, priority, department, status,
-                       is_anonymous, attachments, evidence_types, analysis, source_language,
-                       decision_state, risk_score, routing_confidence, decision_source, decision_reason,
-                       fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version,
-                       last_student_update_at, last_public_admin_update_at, last_user_viewed_updates_at, last_admin_viewed_updates_at,
-                       resolution_summary, reopened_at, reopen_count,
-                       submitted_at, pending_at, in_progress_at, resolved_at, created_at, updated_at
-                FROM complaints
-                WHERE id = %s::uuid AND user_id = %s
+            row = _get_owned_complaint(
+                cur,
+                complaint_id,
+                current_user.user_id,
+                columns="""
+                id, user_id, title, description, category, priority, department, status,
+                is_anonymous, attachments, evidence_types, analysis, source_language,
+                decision_state, risk_score, routing_confidence, decision_source, decision_reason,
+                fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version,
+                last_student_update_at, last_public_admin_update_at, last_user_viewed_updates_at, last_admin_viewed_updates_at,
+                resolution_summary, reopened_at, reopen_count,
+                submitted_at, pending_at, in_progress_at, resolved_at, created_at, updated_at
                 """,
-                (complaint_id, current_user.user_id),
             )
-            row = cur.fetchone()
-
-    if not row:
-        raise HTTPException(status_code=404, detail="Complaint not found")
 
     return _serialize_user_row(row)
 
@@ -3185,36 +3529,28 @@ def list_complaint_updates(
 ):
     with get_db_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT 1
-                FROM complaints
-                WHERE id = %s::uuid AND user_id = %s
-                """,
-                (complaint_id, current_user.user_id),
-            )
-            complaint = cur.fetchone()
-            if not complaint:
-                raise HTTPException(status_code=404, detail="Complaint not found")
+            _get_owned_complaint(cur, complaint_id, current_user.user_id)
 
             cur.execute(
                 """
                 UPDATE complaints
                 SET last_user_viewed_updates_at = NOW()
-                WHERE id = %s::uuid
+                WHERE id = %s::uuid AND user_id = %s
                 """,
-                (complaint_id,),
+                (complaint_id, current_user.user_id),
             )
 
             cur.execute(
                 """
-                SELECT id, complaint_id, author_role, author_id, body, is_internal, created_at
-                FROM complaint_updates
-                WHERE complaint_id = %s::uuid
+                SELECT u.id, u.complaint_id, u.author_role, u.author_id, u.body, u.is_internal, u.created_at
+                FROM complaint_updates u
+                INNER JOIN complaints c ON c.id = u.complaint_id
+                WHERE u.complaint_id = %s::uuid
+                  AND c.user_id = %s
                   AND is_internal = FALSE
-                ORDER BY created_at ASC
+                ORDER BY u.created_at ASC
                 """,
-                (complaint_id,),
+                (complaint_id, current_user.user_id),
             )
             rows = cur.fetchall()
     return [_serialize_update_row(row) for row in rows]
@@ -3233,17 +3569,7 @@ def create_complaint_update(
     update_id = str(uuid.uuid4())
     with get_db_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT id
-                FROM complaints
-                WHERE id = %s::uuid AND user_id = %s
-                """,
-                (complaint_id, current_user.user_id),
-            )
-            complaint = cur.fetchone()
-            if not complaint:
-                raise HTTPException(status_code=404, detail="Complaint not found")
+            _get_owned_complaint(cur, complaint_id, current_user.user_id)
 
             cur.execute(
                 """
@@ -3261,9 +3587,9 @@ def create_complaint_update(
                 """
                 UPDATE complaints
                 SET last_student_update_at = NOW()
-                WHERE id = %s::uuid
+                WHERE id = %s::uuid AND user_id = %s
                 """,
-                (complaint_id,),
+                (complaint_id, current_user.user_id),
             )
         conn.commit()
     return _serialize_update_row(row)
@@ -3282,17 +3608,12 @@ def reopen_complaint(
     update_id = str(uuid.uuid4())
     with get_db_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT id, status
-                FROM complaints
-                WHERE id = %s::uuid AND user_id = %s
-                """,
-                (complaint_id, current_user.user_id),
+            complaint = _get_owned_complaint(
+                cur,
+                complaint_id,
+                current_user.user_id,
+                columns="id, status",
             )
-            complaint = cur.fetchone()
-            if not complaint:
-                raise HTTPException(status_code=404, detail="Complaint not found")
             if str(complaint.get("status")) != "resolved":
                 raise HTTPException(status_code=400, detail="Only resolved complaints can be reopened")
 
@@ -3306,7 +3627,7 @@ def reopen_complaint(
                     reopen_count = COALESCE(reopen_count, 0) + 1,
                     pending_at = NOW(),
                     last_student_update_at = NOW()
-                WHERE id = %s::uuid
+                WHERE id = %s::uuid AND user_id = %s
                 RETURNING id, user_id, title, description, category, priority, department, status,
                           assigned_to, admin_notes, is_anonymous, attachments, evidence_types, analysis, source_language,
                           decision_state, risk_score, routing_confidence, decision_source, decision_reason,
@@ -3315,7 +3636,7 @@ def reopen_complaint(
                           resolution_summary, reopened_at, reopen_count,
                           submitted_at, pending_at, in_progress_at, resolved_at, created_at, updated_at
                 """,
-                (complaint_id,),
+                (complaint_id, current_user.user_id),
             )
             row = cur.fetchone()
             _write_complaint_audit_log(
@@ -3363,12 +3684,18 @@ def create_complaint(payload: ComplaintCreate, current_user: CurrentUser = Depen
             payload.title.strip(),
             payload.description.strip(),
             user_id=current_user.user_id,
+            attachments=payload.attachments,
+            evidence_types=payload.evidence_types,
+            attachment_contexts=[item.model_dump() for item in payload.attachment_contexts],
+            source_language=payload.source_language,
+            is_anonymous=bool(payload.is_anonymous),
         )
     if payload.source_language:
         merged_analysis["source_language"] = payload.source_language
     merged_analysis["attachment_checks"] = _attachment_metadata_analysis(
         payload.attachments,
         payload.evidence_types,
+        [item.model_dump() for item in payload.attachment_contexts],
     )
     submission_guard = merged_analysis.get("submission_guard", {})
     if isinstance(submission_guard, dict) and not bool(submission_guard.get("allow_submission", True)):
@@ -3718,7 +4045,7 @@ def predict_complaint(complaint_id: str, admin_user: CurrentUser = Depends(requi
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, title, description
+                SELECT id, title, description, attachments, evidence_types, source_language, is_anonymous
                 FROM complaints
                 WHERE id = %s::uuid
                 """,
@@ -3728,7 +4055,14 @@ def predict_complaint(complaint_id: str, admin_user: CurrentUser = Depends(requi
     if not row:
         raise HTTPException(status_code=404, detail="Complaint not found")
 
-    prediction = _analyze_text_bundle(row["title"], row["description"])
+    prediction = _analyze_text_bundle(
+        row["title"],
+        row["description"],
+        attachments=row.get("attachments") or [],
+        evidence_types=row.get("evidence_types") or [],
+        source_language=row.get("source_language"),
+        is_anonymous=bool(row.get("is_anonymous")),
+    )
     return prediction
 
 
@@ -3851,7 +4185,7 @@ def auto_apply_prediction(
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, title, description
+                SELECT id, title, description, attachments, evidence_types, source_language, is_anonymous
                 FROM complaints
                 WHERE id = %s::uuid
                 """,
@@ -3862,7 +4196,14 @@ def auto_apply_prediction(
                 raise HTTPException(status_code=404, detail="Complaint not found")
 
             try:
-                prediction_bundle = _analyze_text_bundle(row["title"], row["description"])
+                prediction_bundle = _analyze_text_bundle(
+                    row["title"],
+                    row["description"],
+                    attachments=row.get("attachments") or [],
+                    evidence_types=row.get("evidence_types") or [],
+                    source_language=row.get("source_language"),
+                    is_anonymous=bool(row.get("is_anonymous")),
+                )
                 prediction = prediction_bundle["classification"]
             except Exception as exc:
                 raise HTTPException(
@@ -3873,7 +4214,7 @@ def auto_apply_prediction(
                 analysis=prediction_bundle,
                 fallback_priority=str(prediction.get("priority") or "medium").lower(),
                 fallback_category=str(prediction.get("label") or "Uncategorized"),
-                is_anonymous=False,
+                is_anonymous=bool(row.get("is_anonymous")),
             )
             cur.execute(
                 """
@@ -4367,7 +4708,7 @@ def auto_classify_all_complaints(
             if payload.only_pending:
                 cur.execute(
                     """
-                    SELECT id, title, description
+                    SELECT id, title, description, attachments, evidence_types, source_language, is_anonymous
                     FROM complaints
                     WHERE status IN ('submitted', 'pending')
                       AND (category IS NULL OR category = '' OR category = 'Uncategorized' OR category = 'Unknown')
@@ -4377,7 +4718,7 @@ def auto_classify_all_complaints(
             else:
                 cur.execute(
                     """
-                    SELECT id, title, description
+                    SELECT id, title, description, attachments, evidence_types, source_language, is_anonymous
                     FROM complaints
                     ORDER BY created_at DESC
                     """
@@ -4386,7 +4727,14 @@ def auto_classify_all_complaints(
 
             for row in rows:
                 try:
-                    prediction = _analyze_text_bundle(row["title"], row["description"])
+                    prediction = _analyze_text_bundle(
+                        row["title"],
+                        row["description"],
+                        attachments=row.get("attachments") or [],
+                        evidence_types=row.get("evidence_types") or [],
+                        source_language=row.get("source_language"),
+                        is_anonymous=bool(row.get("is_anonymous")),
+                    )
                 except Exception as exc:
                     raise HTTPException(
                         status_code=503,
@@ -4396,7 +4744,7 @@ def auto_classify_all_complaints(
                     analysis=prediction,
                     fallback_priority=str(prediction["classification"]["priority"]).lower(),
                     fallback_category=str(prediction["classification"]["label"]),
-                    is_anonymous=False,
+                    is_anonymous=bool(row.get("is_anonymous")),
                 )
                 cur.execute(
                     """
@@ -4535,8 +4883,21 @@ def get_admin_analytics(admin_user: CurrentUser = Depends(require_admin)):
     quarantined = 0
     overdue_sla = 0
     fairness_alerts: Counter[str] = Counter()
+    fairness_groups: dict[str, Counter[str]] = {
+        "anonymity": Counter(),
+        "language": Counter(),
+        "category": Counter(),
+        "user_group": Counter(),
+    }
+    fairness_review_groups: dict[str, Counter[str]] = {
+        "anonymity": Counter(),
+        "language": Counter(),
+        "category": Counter(),
+        "user_group": Counter(),
+    }
     total_risk = 0.0
     emotions: Counter[str] = Counter()
+    rationale_counter: Counter[str] = Counter()
     department_workload: dict[str, dict[str, int]] = defaultdict(lambda: {
         "total": 0,
         "active": 0,
@@ -4575,10 +4936,30 @@ def get_admin_analytics(admin_user: CurrentUser = Depends(require_admin)):
             overdue_sla += 1
         for flag in row.get("fairness_flags") or []:
             fairness_alerts[str(flag)] += 1
+        analysis = row.get("analysis") if isinstance(row.get("analysis"), dict) else {}
+        decision_reason = row.get("decision_reason") if isinstance(row.get("decision_reason"), dict) else {}
+        fairness_context = decision_reason.get("fairness_context", {}) if isinstance(decision_reason, dict) else {}
+        anonymity_group = "anonymous" if bool(row.get("is_anonymous")) else "identified"
+        language_group = str(row.get("source_language") or analysis.get("source_language") or "unknown")
+        category_group = str(row.get("category") or "uncategorized")
+        user_group = str(fairness_context.get("user_group") or "standard_submitter")
+        fairness_groups["anonymity"][anonymity_group] += 1
+        fairness_groups["language"][language_group] += 1
+        fairness_groups["category"][category_group] += 1
+        fairness_groups["user_group"][user_group] += 1
+        if bool(row.get("requires_human_review")):
+            fairness_review_groups["anonymity"][anonymity_group] += 1
+            fairness_review_groups["language"][language_group] += 1
+            fairness_review_groups["category"][category_group] += 1
+            fairness_review_groups["user_group"][user_group] += 1
         total_risk += float(row.get("risk_score") or 0.0)
         emotion = sentiment.get("emotion")
         if isinstance(emotion, str) and emotion:
             emotions[emotion] += 1
+        explainability = analysis.get("explainability", {}) if isinstance(analysis, dict) else {}
+        for item in explainability.get("rationale_items", []) if isinstance(explainability, dict) else []:
+            if isinstance(item, dict):
+                rationale_counter[str(item.get("feature") or "unknown")] += 1
 
         department_workload[department]["total"] += 1
         if status_value in {"submitted", "pending", "in_progress"}:
@@ -4620,12 +5001,29 @@ def get_admin_analytics(admin_user: CurrentUser = Depends(require_admin)):
             )[:8],
         },
         "emotion_distribution": dict(emotions.most_common(5)),
+        "explainability_summary": {
+            "top_rationales": [
+                {"feature": feature, "count": count}
+                for feature, count in rationale_counter.most_common(6)
+            ],
+        },
         "fairness_summary": {
             "alert_count": sum(fairness_alerts.values()),
             "top_flags": [
                 {"flag": flag, "count": count}
                 for flag, count in fairness_alerts.most_common(6)
             ],
+            "group_breakdown": {
+                group_name: [
+                    {
+                        "group": group_value,
+                        "count": count,
+                        "human_review_count": int(fairness_review_groups[group_name].get(group_value, 0)),
+                    }
+                    for group_value, count in counter.most_common(8)
+                ]
+                for group_name, counter in fairness_groups.items()
+            },
         },
         "trend_forecast": trend_forecast,
     }

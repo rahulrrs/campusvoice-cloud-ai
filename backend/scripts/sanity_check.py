@@ -15,9 +15,18 @@ try:
     from src.utils.helpers import clean_text
 except Exception:
     clean_text = None
+try:
+    from src.utils.model_paths import load_project_env, resolve_backbone_source
+except Exception:
+    load_project_env = None
+    resolve_backbone_source = None
 
 DATA_DIR = PROJECT_ROOT / "data"
 FILE_PATH = DATA_DIR / "dataset.csv"
+MODEL_DIR = PROJECT_ROOT / "outputs" / "edu_classifier_multitask"
+
+if callable(load_project_env):
+    load_project_env(PROJECT_ROOT)
 
 if not FILE_PATH.exists():
     alt_path = DATA_DIR / "dataset.xlsx"
@@ -194,6 +203,74 @@ print(df["text_length"].describe())
 
 print("\nLongest text sample (first 500 chars):")
 print(df.sort_values("text_length", ascending=False)["text"].iloc[0][:500])
+
+print("\n===============================")
+print("PIPELINE CHECK")
+print("===============================")
+
+pipeline_paths = {
+    "dataset_clean": DATA_DIR / "dataset_clean.csv",
+    "dataset_corrected": DATA_DIR / "dataset_corrected.csv",
+    "train_split": DATA_DIR / "train.csv",
+    "val_split": DATA_DIR / "val.csv",
+    "test_split": DATA_DIR / "test.csv",
+    "model_dir": MODEL_DIR,
+    "model_weights_safe": MODEL_DIR / "model.safetensors",
+    "model_weights_bin": MODEL_DIR / "pytorch_model.bin",
+    "tokenizer_config": MODEL_DIR / "tokenizer_config.json",
+    "id_to_label": MODEL_DIR / "id_to_label.json",
+    "id_to_priority": MODEL_DIR / "id_to_priority.json",
+    "metadata_config": MODEL_DIR / "metadata_config.json",
+}
+
+for name, path in pipeline_paths.items():
+    print(f"{name}: {'OK' if path.exists() else 'MISSING'} -> {path}")
+
+if callable(resolve_backbone_source):
+    resolved_backbone, backbone_note = resolve_backbone_source(PROJECT_ROOT, MODEL_DIR)
+    print(f"resolved_backbone: {resolved_backbone}")
+    if backbone_note:
+        print(f"backbone_note: {backbone_note}")
+
+split_paths = [DATA_DIR / "train.csv", DATA_DIR / "val.csv", DATA_DIR / "test.csv"]
+if all(path.exists() for path in split_paths):
+    split_frames = {path.stem: pd.read_csv(path, low_memory=False) for path in split_paths}
+    required_split_cols = {"text", "label", "label_id", "priority", "priority_id_fixed"}
+    for split_name, split_df in split_frames.items():
+        missing_cols = required_split_cols - set(split_df.columns)
+        if missing_cols:
+            raise ValueError(f"{split_name}.csv missing columns: {sorted(missing_cols)}")
+        print(f"{split_name}.csv rows: {len(split_df)}")
+
+    merged = pd.concat(split_frames.values(), ignore_index=True)
+    label_pairs = (
+        merged[["label_id", "label"]]
+        .dropna()
+        .assign(label=lambda frame: frame["label"].astype(str).str.strip())
+        .drop_duplicates()
+    )
+    bad_label_ids = label_pairs.groupby("label_id")["label"].nunique()
+    conflicts = bad_label_ids[bad_label_ids > 1]
+    if not conflicts.empty:
+        raise ValueError(f"Split label mapping conflicts detected: {conflicts.to_dict()}")
+    print(f"split_label_count: {label_pairs['label_id'].nunique()}")
+
+    prio_pairs = (
+        merged[["priority_id_fixed", "priority"]]
+        .dropna()
+        .assign(priority=lambda frame: frame["priority"].astype(str).str.strip())
+        .drop_duplicates()
+    )
+    bad_prio_ids = prio_pairs.groupby("priority_id_fixed")["priority"].nunique()
+    prio_conflicts = bad_prio_ids[bad_prio_ids > 1]
+    if not prio_conflicts.empty:
+        raise ValueError(f"Split priority mapping conflicts detected: {prio_conflicts.to_dict()}")
+    print(f"split_priority_values: {sorted(prio_pairs['priority'].unique().tolist())}")
+
+    label_map_path = MODEL_DIR / "id_to_label.json"
+    if label_map_path.exists():
+        label_map = pd.read_json(label_map_path, typ="series")
+        print(f"saved_label_map_count: {len(label_map)}")
 
 print("\n===============================")
 print("GPU CHECK")

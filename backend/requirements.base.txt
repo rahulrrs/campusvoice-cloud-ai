@@ -13,3 +13,6 @@ PyJWT
 python-dotenv
 safetensors
 tensorboard
+sentence-transformers
+hnswlib
+langdetect

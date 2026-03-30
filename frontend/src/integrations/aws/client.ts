@@ -421,6 +421,14 @@ export interface CreateComplaintPayload {
   priority?: string;
   attachments?: string[];
   evidence_types?: string[];
+  attachment_contexts?: Array<{
+    key?: string | null;
+    mime_type?: string | null;
+    language?: string | null;
+    ocr_text?: string | null;
+    transcript_text?: string | null;
+    image_summary?: string | null;
+  }>;
   analysis?: ComplaintAnalysisBundle;
   source_language?: string;
   is_anonymous?: boolean;
@@ -532,6 +540,24 @@ export interface ComplaintAnalysisBundle {
       score: number;
     }>;
   };
+  multimodal_evidence?: {
+    attachment_count: number;
+    evidence_types: string[];
+    available_modalities: string[];
+    summary: string;
+    extracted_text: string;
+  };
+  explainability?: {
+    summary: string;
+    confidence_band: string;
+    rationale_items: Array<{
+      target: string;
+      feature: string;
+      value: number;
+      reason: string;
+    }>;
+    text_preview: string;
+  };
   recommendations: Array<{
     complaint_id: string;
     title: string;
@@ -550,9 +576,12 @@ export interface ComplaintAnalysisBundle {
       file_name: string;
       extension: string;
       kind: string;
+      has_extracted_text?: boolean;
       warnings: string[];
     }>;
     image_count: number;
+    audio_count?: number;
+    document_count?: number;
     warnings: string[];
   };
   submission_guard?: {
@@ -592,12 +621,23 @@ export interface AnalyticsResponse {
     }>;
   };
   emotion_distribution: Record<string, number>;
+  explainability_summary: {
+    top_rationales: Array<{
+      feature: string;
+      count: number;
+    }>;
+  };
   fairness_summary: {
     alert_count: number;
     top_flags: Array<{
       flag: string;
       count: number;
     }>;
+    group_breakdown: Record<string, Array<{
+      group: string;
+      count: number;
+      human_review_count: number;
+    }>>;
   };
   trend_forecast: {
     overall: {
@@ -727,7 +767,16 @@ export const complaintsApi = {
       method: "POST",
       body: JSON.stringify({ text }),
     }),
-  analyzeComplaint: (payload: { title: string; description: string }) =>
+  analyzeComplaint: (payload: {
+    title: string;
+    description: string;
+    attachments?: string[];
+    evidence_types?: string[];
+    source_language?: string;
+    is_anonymous?: boolean;
+    submitted_at?: string;
+    attachment_contexts?: CreateComplaintPayload["attachment_contexts"];
+  }) =>
     authFetch<ComplaintAnalysisBundle>("/complaints/analyze", {
       method: "POST",
       body: JSON.stringify(payload),

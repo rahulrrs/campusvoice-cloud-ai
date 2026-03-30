@@ -1,372 +1,701 @@
-text,label,priority,label_id,word_count,priority_id_fixed,priority_imputed,text_len
-Feeling surprised by final grade despite assuming better performance,Examination,Low,3,9,0,0,68
-Complaining about not being allowed unsafe actions,Discipline,Low,2,7,0,0,50
-"""I am being denied exam hall ticket due to attendance shortage caused by wrong marking.""",Attendance,High,0,15,2,0,88
-Marksheets and transcripts provided without any exams being conducted,Certificate & Records,Medium,1,9,1,0,69
-Student records existed in system but lacked supporting academic details,Certificate & Records,Medium,1,10,1,0,72
-"""Students mostly attend only during exams or important days.""",Attendance,Low,0,9,0,0,61
-Students not knowing if they are witnesses or accused parties before meetings,Discipline,Low,2,12,0,0,77
-University not clarifying correct certificate format requirements,Certificate & Records,Low,1,7,0,0,65
-School policies reducing suspensions or write-ups to maintain funding or public image,Discipline,High,2,12,2,0,85
-"""everyone constantly bombed the exams.""",Faculty,Medium,4,5,1,0,39
-Doubt regarding validity of duplicate certificates mentioning “duplicate”,Certificate & Records,Low,1,8,0,0,73
-Delay in decision-making due to lack of clear institutional guidance,Certificate & Records,Medium,1,10,1,0,68
-Complaint that limited opportunity was given to discuss grades before finalization,Examination,Medium,3,11,1,0,82
-Inconsistent grading compared to expectations or other classes,Faculty,Medium,4,8,1,0,62
-Frequent technical issues in online classes not addressed by faculty,Faculty,Medium,4,10,1,0,68
-students showing inability to independently produce exam-quality work,Examination,High,3,8,2,0,69
-feeling exams don’t reflect actual understanding,Examination,Low,3,6,0,0,48
-"Uniform policies can shift status competition to other items (e.g., shoes), not fully solving inequality issues",Discipline,Medium,2,16,1,0,111
-Lack of clear or consistent interpretation of rules,Discipline,High,2,8,2,0,51
-Fear of retaliation in grading when filing complaints,Discipline,High,2,8,2,0,53
-Delay due to manual verification of old records,Certificate & Records,Medium,1,8,1,0,47
-Faculty frequently arrives late or ends class excessively early,Faculty,Medium,4,9,1,0,63
-Marksheets issued without official registrar signature making them invalid,Certificate & Records,High,1,9,2,0,74
-"College retaining original 10th, 12th marksheets and certificates indefinitely",Certificate & Records,High,1,9,2,0,78
-"""I missed internal assessments because of attendance shortage and now my results are affected.""",Attendance,High,0,14,2,0,95
-No clarity on revaluation procedure and its necessity,Certificate & Records,Low,1,8,0,0,53
-University delaying response despite submission of all required documents,Certificate & Records,Medium,1,9,1,0,73
-Students expecting to skip assignments without penalty,Discipline,Medium,2,7,1,0,54
-"""She says she will come at 7 or 7:30 but ends up arriving at 8:25.""",Attendance,Medium,0,15,1,0,67
-Rules like ID/lanyard requirements or “corporate dress” expectations are seen as annoying but manageable,Discipline,Low,2,14,0,0,104
-Degree certificate not delivered even after completing course years ago,Certificate & Records,High,1,10,2,0,71
-Discriminatory or unequal treatment in grading,Faculty,High,4,6,2,0,46
-Unable to track status of migration certificate application,Certificate & Records,Low,1,8,0,0,59
-Complaint that insufficient examples of high-quality work were provided,Examination,Medium,3,9,1,0,71
-students losing trust in fairness of examination system,Examination,High,3,8,2,0,55
-"faculty pressured by student evaluations, leading some to lower academic rigor",Examination,Medium,3,11,1,0,78
-students escalating grading disputes to higher authorities without valid academic grounds,Examination,Low,3,11,0,0,89
-"""Her arrival time remains unpredictable on a daily basis.""",Attendance,Medium,0,9,1,0,58
-Academic records withheld despite repeated requests,Certificate & Records,High,1,6,2,0,51
-Overuse of irrelevant anecdotes during teaching,Faculty,Low,4,6,0,0,47
-"""She was routinely late to class.""",Faculty,Low,4,6,0,0,34
-"""Sam’s attendance creates uneven workload distribution across the team.""",Attendance,Medium,0,9,1,0,72
-Delay in response from university regarding document authenticity,Certificate & Records,Low,1,8,0,0,65
-Unclear process for getting academic document verification done,Certificate & Records,Low,1,8,0,0,63
-Need to wait 30 days for response from CPGRAMS without interim support,Certificate & Records,Medium,1,12,1,0,70
-Students selectively attend only sessions they perceive as important for exams,Attendance,Medium,0,11,1,0,78
-“Expect students to do all the footwork and research.”,Faculty,Medium,4,9,1,0,54
-students not knowing whether to file police complaint for lost certificates,Certificate & Records,Low,1,11,0,0,75
-Delays or barriers in accessing disability documentation or approvals,Discipline,Medium,2,9,1,0,69
-Request to drop the lowest quiz or assignment score,Examination,Low,3,9,0,0,51
-"students disrupt class by talking, ignoring instructions, and acting out",Discipline,Medium,2,10,1,0,72
-"Teachers enforcing dress code may face pushback or hostility from students, increasing classroom tension",Discipline,Medium,2,14,1,0,104
-Difficulty affording alternative clothing that meets strict dress code requirements,Discipline,Low,2,10,0,0,83
-“Not having a way you can check your overall grade.”,Faculty,Medium,4,10,1,0,52
-"""My attendance situation was so bad that I was expecting academic consequences.""",Attendance,High,0,12,2,0,80
-"""The workload becomes difficult to manage when Sam is not present.""",Attendance,High,0,11,2,0,67
-"""She continues to miss work without proper prior notice.""",Attendance,High,0,9,2,0,57
-Students falsely declaring low income to obtain financial aid or scholarships,Certificate & Records,Medium,1,11,1,0,77
-Overly long awkward silences in class,Faculty,Low,4,6,0,0,37
-students experiencing moral conflict due to dishonest exam environment,Examination,High,3,9,2,0,70
-"""Had TAs announce assignments... not on the syllabus""",Faculty,Medium,4,8,1,0,53
-"Complaining about free rewards (food, candy, gifts)",Discipline,Low,2,7,0,0,51
-Original certificates not returned even after years (2015 case),Certificate & Records,High,1,9,2,0,63
-"Policies requiring meetings, witnesses, or formal procedures add complexity and discourage enforcement",Discipline,Medium,2,12,1,0,102
-students said they didn’t realize application would be required,Examination,Low,3,9,0,0,63
-Students being denied accommodations until escalation to higher authorities forces compliance,Discipline,High,2,11,2,0,93
-Semester mark sheets not issued by college,Certificate & Records,High,1,7,2,0,42
-Candidates relying on others to attend interviews on their behalf,Certificate & Records,Medium,1,10,1,0,65
-"""made horrible, bold faced lies like saying that crowds of people... cheered when they learned about the 9/11 terror attacks.""",Faculty,High,4,20,2,0,126
-Outsourcing of assigned job tasks to third parties due to lack of real skills,Certificate & Records,Medium,1,14,1,0,77
-"academic systems failing to deter cheating, making honest students feel disadvantaged",Examination,High,3,11,2,0,85
-"""I informed the faculty about my absence but it was still marked as unexcused.""",Attendance,Medium,0,14,1,0,79
-Mismatch in tuition fee records delaying certificate issuance,Certificate & Records,High,1,8,2,0,61
-"Policies around “appropriate dress” are vague and allow subjective interpretation, resulting in unfair or arbitrary punishment",Discipline,High,2,16,2,0,126
-students challenging grading without engaging with feedback or rubric,Examination,High,3,9,2,0,69
-"""On exam days, he would walk around the classroom giving 'hints' or outright answers""",Faculty,Low,4,14,0,0,85
-Unclear instructions for assignments or projects,Faculty,Medium,4,6,1,0,48
-Students refusing to follow basic instructions or complete work,Discipline,Medium,2,9,1,0,63
-Parents’ inaction or poor parenting contributing to student behavior,Discipline,Low,2,9,0,0,68
-Students unknowingly becoming part of fraudulent degree schemes,Certificate & Records,Medium,1,8,1,0,63
-Professor uses class time to promote personal beliefs in a harmful or discriminatory way,Faculty,High,4,14,2,0,88
-"""She showed up to the FINAL EXAM A FULL HOUR LATE""",Faculty,Low,4,11,0,0,50
-Severe miscommunication causing inability to enroll or continue,Faculty,High,4,8,2,0,63
-Claim that grading system disadvantaged students compared to other courses,Examination,High,3,10,2,0,74
-Exam date is tomorrow and the admit card link on the portal is broken.,Examination,High,3,14,2,0,70
-Uses fear tactics to control students,Faculty,High,4,6,2,0,37
-Use of institutional forms to impose questionable or illegal documentation requirements,Certificate & Records,High,1,11,2,0,87
-Professor gives overly generic comments like “improve” without specifics,Faculty,Low,4,9,0,0,72
-institutional reputational damage due to unchecked certificate fraud,Certificate & Records,High,1,8,2,0,68
-Feeling that losing marks for small arithmetic or rounding errors was too harsh,Examination,Low,3,13,0,0,79
-"""She is often just a few minutes late to work.""",Attendance,Low,0,10,0,0,47
-“Incorrect or misleading assignment instructions affecting grades.”,Faculty,High,4,7,2,0,67
-students making formal accusations against faculty over grading decisions,Examination,High,3,9,2,0,73
-I am unsure whether the certificate must strictly be issued on official university letterhead,Certificate & Records,Low,1,14,0,0,93
-"Some policies are contradictory (e.g., strict rules for students but relaxed or unequal standards for teachers)",Discipline,Medium,2,16,1,0,111
-retaliation fear after filing academic complaints affecting exam outcomes,Examination,High,3,9,2,0,73
-colleges withholding original certificates unless full course fees are paid,Certificate & Records,High,1,10,2,0,75
-Students forced to escalate to High Court for document recovery,Certificate & Records,High,1,10,2,0,63
-students facing career blockage due to inability to access essential documents,Certificate & Records,High,1,11,2,0,78
-"""the community college prof who would give us 10 minutes of instruction each day and then let us go.""",Faculty,Low,4,19,0,0,101
-Professor uses harsh or overly critical feedback tone,Faculty,Medium,4,8,1,0,53
-QR code on degree present but lacking proper verification linkage or transparency,Certificate & Records,Low,1,12,0,0,81
-Broader systemic failure to address root causes (family/community behavior),Discipline,High,2,9,2,0,75
-Migration certificate application not processed for long duration,Certificate & Records,Medium,1,8,1,0,65
-Ignoring student concerns or refusing to provide clarification,Faculty,Medium,4,8,1,0,62
-students lacking persistence when facing difficult exam questions,Examination,Low,3,8,0,0,65
-"""She fails to communicate in advance about planned absences like kids having no school.""",Attendance,Medium,0,14,1,0,88
-Inadequate safeguards against misuse of institutional identity for issuing fake credentials,Certificate & Records,Medium,1,11,1,0,91
-"""Director called guardians for students whose attendance was below 75%.""",Attendance,High,0,10,2,0,72
-“Students must get a B or lower.”,Faculty,High,4,7,2,0,33
-"“Making the test unfinishable, it messes with everyone’s confidence” (borderline)",Faculty,Low,4,10,0,0,81
-"""She does not utilize the work from home option even when advised to.""",Attendance,Medium,0,13,1,0,70
-“Failing students for minor issues (like missing name).”,Faculty,High,4,8,2,0,56
-Cultural shift reducing respect toward teachers,Discipline,Low,2,6,0,0,47
-"""Some professors use attendance as a control tool rather than actual tracking.""",Attendance,Medium,0,12,1,0,79
-"Dress codes sometimes force students to leave school or miss instruction due to lack of appropriate replacement clothing, harming academic progress",Discipline,High,2,21,2,0,147
-"""I feel attendance is stressful to maintain.""",Attendance,Low,0,7,0,0,45
-"Dress code enforcement may conflict with student rights to expression, creating tension around fairness and autonomy",Discipline,High,2,16,2,0,116
-"""treated me an an inept yokel for the rest of the term.""",Faculty,Medium,4,12,1,0,56
-"""I think attendance policies are outdated and not suitable for modern learning environments.""",Attendance,Low,0,13,0,0,93
-Faculty denying and refusing to apologize after exposing grades,Discipline,High,2,9,2,0,63
-students complaining about not instantly finding exam assignments on course platforms,Examination,Medium,3,11,1,0,85
-Unclear conduct policies being applied broadly (“disruption” without clear definition),Discipline,Medium,2,10,1,0,86
-"""If my attendance drops further I will not be allowed to appear for the exam.""",Attendance,High,0,15,2,0,78
-"""My professor suggested I withdraw because my attendance is too low to pass the course.""",Attendance,High,0,15,2,0,88
-Uncertainty about risks involved in stating documents as “lost”,Certificate & Records,Low,1,9,0,0,63
-"""I sometimes forget to attend classes.""",Attendance,Low,0,6,0,0,39
-"Students wearing pajamas, slippers, blankets, or casual attire is viewed by some as inappropriate but not worth enforcing",Discipline,Low,2,18,0,0,121
-Students disrupting entire class learning with no intervention from leadership,Discipline,High,2,10,2,0,78
-students expected identical questions from study materials,Examination,Low,3,7,0,0,58
-students treating university grading as negotiable rather than evaluative,Examination,High,3,9,2,0,73
-"""I find it hard to balance attendance with other activities.""",Attendance,Low,0,10,0,0,61
-exams covering too many chapters at once,Examination,Medium,3,7,1,0,40
-Possible institutional negligence in verifying legitimacy of enrollments and issued degrees,Certificate & Records,Low,1,11,0,0,91
-students unsure about procedure to apply for duplicate degree certificate after losing original,Certificate & Records,Low,1,13,0,0,95
-students expecting recognition for effort in small grading decisions,Examination,Low,3,9,0,0,68
-"""The teacher is not taking attendance properly during class.""",Attendance,Medium,0,9,1,0,61
-Belief that consistent participation or attendance should slightly improve the final grade,Examination,Low,3,12,0,0,90
-Students feeling forced to “prove innocence” rather than institution proving violation,Discipline,Medium,2,11,1,0,86
-Lack of clarity on whether duplicate certificate process differs across boards,Certificate & Records,Low,1,11,0,0,78
-students said diagrams did not clearly show which parts the labels referred to,Examination,High,3,13,2,0,78
-Assigns excessive grading work to TAs unfairly,Faculty,Medium,4,7,1,0,46
-legal intervention required to recover original certificates from institutions,Certificate & Records,High,1,9,2,0,78
-Limiting creativity and personal style,Discipline,Low,2,5,0,0,38
-"""I feel attendance should not be so strictly enforced.""",Attendance,Low,0,9,0,0,55
-"""In some institutes attendance is completely optional.""",Attendance,Low,0,7,0,0,55
-Student constantly disrupting class with loud talking and derogatory comments,Discipline,High,2,10,2,0,77
-Students taking advantage of reduced authority and accountability,Discipline,Low,2,8,0,0,65
-Lack of transparency—student not told nature of allegation before conduct meeting,Discipline,High,2,11,2,0,81
-Hall ticket download failing; exam hall is tomorrow at 9 AM. Urgent fix needed.,Examination,High,3,14,2,0,79
-students expected hints or cues similar to class examples,Examination,Low,3,9,0,0,57
-students show open defiance and hostility towards teachers,Discipline,Medium,2,8,1,0,58
-Multiple year delay (3+ years) in issuing degree and consolidated marksheet,Certificate & Records,High,1,11,2,0,75
-Avoids adapting teaching style despite confusion,Faculty,Low,4,6,0,0,48
-Community-level behavior issues affecting student discipline in schools,Discipline,Low,2,8,0,0,71
-Confusion due to sudden rule implementation,Discipline,Low,2,6,0,0,43
-"Administrations often do not support teachers in enforcing dress code, leading to frustration and eventual abandonment of enforcement",Discipline,Medium,2,18,1,0,133
-Students being redirected without resolution when raising valid concerns,Faculty,Medium,4,9,1,0,72
-Potential collusion between agents and internal administrative systems,Certificate & Records,High,1,8,2,0,70
-Ease of generating fake income certificates for non-government-employed families,Certificate & Records,Low,1,9,0,0,80
-Inconsistent rule enforcement across teachers weakening discipline,Discipline,Medium,2,7,1,0,66
-Students unsure how much detail to provide during conduct investigations,Discipline,Medium,2,10,1,0,72
-Perceived lack of transparency in grading process,Faculty,Medium,4,7,1,0,49
-Teachers may feel unsupported when parents challenge dress code enforcement decisions,Discipline,Medium,2,11,1,0,85
-Perception that students are treated as inconveniences rather than priorities,Discipline,Low,2,10,0,0,77
-"""There are repeated errors in my attendance record.""",Attendance,Medium,0,8,1,0,52
-"""The college declared official holiday for those days but the ERP system still marked it as absent.""",Attendance,Medium,0,17,1,0,100
-"""I was present for lab sessions but my attendance was not recorded.""",Attendance,Medium,0,12,1,0,68
-Loss of academic mobility due to document retention,Certificate & Records,High,1,8,2,0,51
-Marksheets issued without registrar signature (invalid document),Certificate & Records,High,1,7,2,0,64
-"""The team is left short staffed whenever Sam takes a day off during the week.""",Attendance,High,0,15,2,0,78
-General societal and cultural trends worsening discipline,Discipline,Low,2,7,0,0,57
-"Professor frequently goes off-topic during lectures, reducing actual teaching time",Faculty,Low,4,10,0,0,82
-Academic misconduct processes varying widely between departments/institutions,Discipline,Medium,2,7,1,0,77
-"""I am at risk of failing multiple subjects because my attendance is too low despite completing coursework.""",Attendance,High,0,17,2,0,107
-“Not grading any assignments the entire quarter.”,Faculty,Medium,4,7,1,0,49
-Uncertainty in required documents for certificate application,Certificate & Records,Low,1,7,0,0,61
-"""I feel attendance policies do not consider student well-being.""",Attendance,Low,0,9,0,0,64
-“Favoritism in grading or behavior.”,Faculty,Medium,4,5,1,0,36
-"""She clearly told me she would make sure I wasn’t allowed to write the semester exam because of my attendance.""",Attendance,High,0,20,2,0,111
-"""I feel attendance tracking should be simpler.""",Attendance,Low,0,7,0,0,47
-College refusing to return documents after student discontinues course,Certificate & Records,High,1,9,2,0,70
-Overly strict dress code removing individuality/self-expression,Discipline,Medium,2,6,1,0,63
-"""My attendance was wrongly updated as absent for an entire week when college was closed for fest.""",Attendance,Medium,0,17,1,0,98
-students feeling exams are disconnected from teaching content,Examination,Medium,3,8,1,0,61
-"Professor interfering with or sabotaging accommodated exams (loss of answers, altered questions)",Discipline,High,2,12,2,0,96
-"""I repeatedly raised complaints but my attendance is still not corrected and now I am at risk of detention.""",Attendance,High,0,19,2,0,108
-students said diagrams lacked clear labeling for answering,Examination,High,3,8,2,0,58
-students complained that similar concepts were hard to distinguish,Examination,Low,3,9,0,0,66
-"""I missed internal exams because of low attendance and now my overall result is affected.""",Attendance,High,0,15,2,0,90
-Uses broken or poorly designed custom systems,Faculty,Medium,4,7,1,0,45
-Belief that grading guidelines were not properly followed by the evaluator,Examination,Medium,3,11,1,0,74
-"""I get anxious when my attendance drops slightly.""",Attendance,Low,0,8,0,0,50
-Candidates being advised to avoid large companies due to strict verification,Certificate & Records,Medium,1,11,1,0,76
-students send unclear or incomplete messages like “???”,Discipline,Low,2,8,0,0,55
-"""Attendance is being marked without verifying actual presence.""",Attendance,Medium,0,8,1,0,63
-"""he didn’t believe people can be ethical without god""",Faculty,High,4,9,2,0,53
-lack of clarity on exam format or expectations,Examination,Medium,3,8,1,0,46
-Administrative replies that close conversation instead of continuing support,Discipline,Low,2,9,0,0,76
-students said they didn’t understand expectations for written responses,Examination,Medium,3,9,1,0,71
-students attempted to choke a classmate by shoving crayons down their throat,Discipline,High,2,12,2,0,76
-lack of effective deterrents for repeated academic dishonesty attempts,Examination,Medium,3,9,1,0,70
-Students bringing drugs/vapes and families demanding confiscated items back,Discipline,High,2,9,2,0,75
-"students resisting basic academic effort like reading, writing, or sitting through class",Examination,Low,3,12,0,0,88
-University not responding properly to World Education Services verification requests,Certificate & Records,High,1,10,2,0,84
-Allegation of calculation error in total grade affecting final outcome,Examination,High,3,10,2,0,70
-"""Her attendance issues are putting strain on the rest of the team who have to cover her duties.""",Attendance,High,0,18,2,0,96
-Course materials not updated or containing outdated information,Faculty,Low,4,8,0,0,63
-"""My attendance shortage is due to system errors but I am still being held responsible for it.""",Attendance,High,0,17,2,0,94
-Students with disabilities being placed at systemic disadvantage during exams,Discipline,High,2,10,2,0,77
-"""I attended almost no classes in final year and still managed to pass.""",Attendance,Low,0,13,0,0,71
-Ignoring serious misconduct reports by administration,Faculty,High,4,6,2,0,53
-"""Students rely on proxies or internal marks instead of attending classes.""",Attendance,Low,0,11,0,0,74
-"""Sam’s pattern of taking time off affects planning and scheduling.""",Attendance,Medium,0,10,1,0,67
-students said certain questions had no possible correct answer,Examination,High,3,9,2,0,62
-Educational consultancy acting as intermediary for issuing questionable academic records,Certificate & Records,Low,1,10,0,0,88
-"""This instructor pissed me off and it's the third day of school.""",Attendance,Low,0,12,0,0,65
-"Students lacking basic responsibility (lateness, incomplete work)",Discipline,Medium,2,7,1,0,65
-"""She would verbally assault him for 20 min""",Faculty,High,4,8,2,0,43
-"""gaslit me into seeking a medical treatment I didn’t need.""",Faculty,High,4,10,2,0,59
-students said they thought practice questions would directly repeat,Examination,Low,3,9,0,0,67
-Third-party agents offering “no attendance” degrees under the name of recognized universities,Certificate & Records,Medium,1,12,1,0,93
-Student conduct charges filed after student escalated complaint to supervisor/dean (possible retaliation),Discipline,High,2,12,2,0,105
-Exams significantly harder than practice materials provided,Faculty,Medium,4,7,1,0,59
-"""I feel attendance should be more flexible for students managing multiple responsibilities.""",Attendance,Low,0,12,0,0,92
-students showing severe learning gaps due to disrupted education during covid,Examination,High,3,11,2,0,77
-Just a fraction below the cutoff for the next grade and asking for a small bump,Examination,Low,3,16,0,0,79
-"""Students often relied on unofficial methods to manage attendance.""",Attendance,Medium,0,9,1,0,67
-"""I attended very few classes but still managed academically.""",Attendance,Low,0,9,0,0,61
-"""he'd give us 10 minutes of instruction each day, then tell us we had to stay in the room for another hour""",Faculty,Low,4,22,0,0,107
-students reported confusion because question data did not match diagrams,Examination,High,3,10,2,0,72
-professor harassment and inappropriate behavior with no transparency after complaint,Examination,High,3,10,2,0,84
-"""I was not consistent with attendance throughout the course.""",Attendance,Low,0,9,0,0,61
-"""Full attendance is only seen during events or parties.""",Attendance,Low,0,9,0,0,56
-Difficulty applying for original degree due to portal issues,Certificate & Records,Medium,1,9,1,0,60
-Uses intimidation like “most of you will fail”,Faculty,Medium,4,8,1,0,46
-"Poor communication from disability office (unclear guidance, dismissive responses)",Discipline,Medium,2,9,1,0,82
-Doesn’t answer student questions clearly,Faculty,Low,4,5,0,0,40
-Heavy workload increase without clear reasoning,Faculty,Medium,4,6,1,0,47
-Delay in action even after submitting official grievance letters,Certificate & Records,Medium,1,9,1,0,64
-Threat of admission cancellation used to enforce submission of original certificates,Certificate & Records,High,1,11,2,0,84
-Retaliatory policy changes after student protest (punitive stricter dress code),Discipline,High,2,10,2,0,79
-lack of coordination among faculty about course difficulty and expectations within the same program,Examination,Medium,3,14,1,0,99
-"Students threatening teachers with police complaints over minor discipline (e.g., bus lateness)",Discipline,High,2,12,2,0,95
-"""I missed classes due to illness but did not get a doctor’s note, and now my absence is not considered valid.""",Attendance,Medium,0,21,1,0,110
-Concern that overall course structure made it hard to recover from early mistakes,Examination,Medium,3,13,1,0,81
-"""I don’t see the value of attending synchronous online classes.""",Attendance,Low,0,10,0,0,64
-issues with academic integrity rules being unclear during take-home exams,Examination,Medium,3,10,1,0,73
-students said they ran out of time thinking through questions,Examination,Medium,3,10,1,0,61
-Non-response from institution causing loss of job/interview opportunities,Certificate & Records,High,1,8,2,0,73
-Assertion that grading transparency was insufficient to justify results,Examination,Medium,3,9,1,0,71
-Grading perceived as inconsistent across similar submissions,Faculty,Medium,4,7,1,0,60
-Students complaining about rules they previously accepted,Discipline,Medium,2,7,1,0,57
-students not reading instructions but complaining about exam expectations,Examination,Medium,3,9,1,0,73
-Unclear whether admission was processed through official procedures,Certificate & Records,Low,1,8,0,0,67
-submission of medical documents with mismatched geographic or provider details,Certificate & Records,Medium,1,10,1,0,78
-students demanding grades inconsistent with actual exam performance,Examination,High,3,8,2,0,67
-Complaint that exam difficulty was significantly higher than practice materials,Examination,Medium,3,10,1,0,79
-"""She regularly pushes the boundaries of the one hour flex time policy.""",Attendance,Medium,0,12,1,0,71
-"""He once came into class and taught in exercise clothes... said it was because he forgot he had a class to teach.""",Faculty,Low,4,22,0,0,114
-"""I attended the session but my presence is not reflected in the system.""",Attendance,Medium,0,13,1,0,72
-Students needing to approach old schools to initiate duplicate certificate process,Certificate & Records,Medium,1,11,1,0,82
-"""If attendance is low they directly inform parents which becomes a serious issue.""",Attendance,High,0,13,2,0,82
-Feeling penalized too heavily for minor formatting or citation mistakes,Examination,Low,3,10,0,0,71
-Students suspecting retaliation for advocating disability rights,Discipline,High,2,7,2,0,64
-Lack of proper escalation mechanism within institution,Certificate & Records,Medium,1,7,1,0,54
-"""In some cases attendance was adjusted without proper verification.""",Attendance,Medium,0,9,1,0,68
-students believed exam difficulty was far beyond course level,Examination,High,3,9,2,0,61
-"""I am unable to attend classes regularly due to ongoing mental health struggles and it is affecting my ability to continue the semester.""",Attendance,High,0,23,2,0,137
-Selective enforcement of rules (girls punished more frequently than boys),Discipline,High,2,10,2,0,73
-Creating a hostile learning environment through repeated verbal abuse,Faculty,High,4,9,2,0,69
-"“‘So, in summary, for example…’”",Faculty,Low,4,5,0,0,32
-"""Sam takes time off quite often even if reasons are valid.""",Attendance,Medium,0,11,1,0,59
-"""I never attended language and environmental science classes and still only needed to write exams.""",Attendance,Low,0,15,0,0,99
-students feeling minor formatting mistakes should be ignored,Examination,Low,3,8,0,0,60
-"""she kept her back to me and we had a conversation looking at each other through the mirror""",Faculty,Low,4,18,0,0,92
-Professor retaliates against students for raising concerns or complaints,Faculty,High,4,9,2,0,72
-"""I feel guilty missing classes due to illness even when it is unavoidable.""",Attendance,Low,0,13,0,0,75
-Complaining about attending class on time,Discipline,Low,2,6,0,0,41
-faculty ignoring suspicious documents due to workload or lack of responsibility,Certificate & Records,Low,1,11,0,0,79
-"""She relies on flexibility policies quite frequently.""",Attendance,Low,0,7,0,0,54
-students feeling honest effort is meaningless due to widespread cheating,Examination,High,3,10,2,0,72
-Faculty relies entirely on textbook without meaningful lecture input,Faculty,Low,4,9,0,0,68
-Ordered certificates not delivered within expected time,Certificate & Records,Medium,1,7,1,0,55
-"""I cannot attend classes due to a serious health condition and the attendance policy is not accommodating.""",Attendance,High,0,17,2,0,107
-Student reported for making an inappropriate joke to a coworker,Discipline,Low,2,10,0,0,63
-students accidentally submitting blank signed medical certificate sheets along with assignments,Certificate & Records,Low,1,11,0,0,95
-"Dress codes banning minor items (e.g., dyed hair, flip-flops, specific clothing styles) are considered trivial or outdated",Discipline,Low,2,17,0,0,122
-exam conflicts not accommodated fairly leading to missed attempts,Examination,High,3,9,2,0,65
-"Students confused about role of ombudsman, dean, or conduct officers",Discipline,Medium,2,10,1,0,68
-students claimed some questions could not be interpreted at all,Examination,High,3,10,2,0,63
-"Teaching outdated tools or mismatched materials (e.g., different software versions)",Faculty,Low,4,10,0,0,83
-"""I feel attendance is given more importance than actual learning.""",Attendance,Low,0,10,0,0,66
-"Refusal to allow basic classroom interaction (e.g., asking questions)",Faculty,High,4,9,2,0,69
-Students lacking discipline due to reduced parental involvement,Discipline,Medium,2,8,1,0,63
-Students unable to transfer to another college because documents are held,Certificate & Records,High,1,11,2,0,73
-Faculty gives inconsistent instructions across different classes of the same course,Faculty,Low,4,11,0,0,83
-Use of university branding and seals on documents that do not meet academic standards,Certificate & Records,Medium,1,14,1,0,85
-students objecting to constructive feedback even when no marks were deducted,Examination,Low,3,11,0,0,76
-"""I informed the teacher about the issue but no correction has been made.""",Attendance,Medium,0,13,1,0,73
-students said readings shouldn’t be tested if not repeated in lecture,Examination,Low,3,11,0,0,69
-TC not provided even after multiple requests affecting internship/job deadlines,Certificate & Records,High,1,10,2,0,79
-“Not teaching but still testing heavily.”,Faculty,High,4,6,2,0,41
-Encouraging hostile or toxic classroom environment,Faculty,High,4,6,2,0,50
-pressure from family expectations around exam performance,Examination,Medium,3,7,1,0,57
-Persistent emotional distress caused by instructor behavior,Faculty,High,4,7,2,0,59
-"""My professor refused to correct attendance even after I proved I was present and now I cannot meet the requirement.""",Attendance,High,0,20,2,0,117
-no access to solutions or guidance for practice problems,Examination,Medium,3,9,1,0,56
-Lack of clear procedures for reporting or resolving accommodation issues,Discipline,Medium,2,10,1,0,72
-Institutions being blacklisted after exposure of fraudulent certification practices,Certificate & Records,High,1,9,2,0,83
-systemic normalization of cheating across institutions or cohorts,Examination,High,3,8,2,0,65
-Excessively harsh grading without justification,Faculty,High,4,5,2,0,47
-No audit trail available for admission or certification process,Certificate & Records,Low,1,9,0,0,63
-Failure to grade major coursework impacting final grade,Faculty,High,4,8,2,0,55
-Employees needing to limit career growth to avoid detection,Certificate & Records,Medium,1,9,1,0,59
-students expecting instructors to regrade improved resubmissions that were not originally submitted,Examination,Low,3,12,0,0,99
-"""The attendance entries are not being updated correctly in the system.""",Attendance,Medium,0,11,1,0,71
-Social tension created between students and administration,Discipline,Low,2,7,0,0,58
-students expressing difficulty adjusting to stricter grading standards,Examination,Low,3,8,0,0,70
-Perceived favoritism in class participation or attention,Faculty,Low,4,7,0,0,56
-cases where administration sides with students despite clear academic misconduct concerns,Examination,High,3,11,2,0,89
-Reliance on third-party verification agencies to detect document fraud,Certificate & Records,Low,1,9,0,0,70
-Failure to provide accessible learning resources or materials,Faculty,Medium,4,8,1,0,61
-students expecting guaranteed high marks regardless of exam quality,Examination,High,3,9,2,0,67
-students feeling stressed or anxious during exams,Examination,Low,3,7,0,0,49
-students expecting leniency due to past grading standards during covid,Examination,Medium,3,10,1,0,70
-Large class sizes reducing ability to manage behavior effectively,Discipline,Medium,2,9,1,0,65
-No proper linkage between enrollment data and issued certificates,Certificate & Records,Medium,1,9,1,0,65
-"""I was forced to withdraw from the course due to attendance issues even though I had informed the faculty in advance about my absence.""",Attendance,High,0,24,2,0,135
-"""Her attendance behavior is impacting business operations in a small team setting.""",Attendance,High,0,12,2,0,83
-lack of motivation during exam periods,Examination,Low,3,6,0,0,38
-Management siding with parents even when students are clearly at fault,Discipline,High,2,11,2,0,70
-“Flat out refusing to honor accommodations.” (edge but often situational tone here),Faculty,Low,4,12,0,0,83
-Concern that different sections or cohorts may have been graded differently,Examination,Medium,3,11,1,0,75
-Closed school records not provided despite request,Certificate & Records,Medium,1,7,1,0,50
-"""he'd tell us to go in ones and twos, real sneaky-like.""",Faculty,Low,4,11,0,0,56
-students struggled with identifying what a question was asking,Examination,Medium,3,9,1,0,62
-Fear-based suppression of complaints by management,Discipline,High,2,6,2,0,50
-Expectation that effort and time invested should be reflected slightly more in grade,Examination,Low,3,13,0,0,84
-"""I am being forced to withdraw from the course due to attendance shortage.""",Attendance,High,0,13,2,0,75
-overreliance on simple or recycled assessments by some instructors,Examination,Medium,3,9,1,0,66
-“Making jokes directed towards students.”,Faculty,Low,4,5,0,0,41
-Refuses to reconsider proven evidence,Faculty,High,4,5,2,0,37
-Students unable to switch jobs due to inconsistencies in academic records,Certificate & Records,Medium,1,11,1,0,73
-General frustration that dress code exists but is not meaningfully applied or taken seriously,Discipline,Low,2,14,0,0,93
-Losing marks for minor arithmetic or rounding mistakes,Examination,Low,3,8,0,0,54
-Students wearing unusual or expressive outfits (costume-like clothing) may be viewed as odd but not disruptive,Discipline,Low,2,16,0,0,110
-"""The attendance portal is showing incorrect percentages.""",Attendance,Medium,0,7,1,0,57
-"""My attendance situation could have caused me to lose an entire semester.""",Attendance,High,0,12,2,0,74
-No clarity on process to retrieve documents without conflict,Certificate & Records,Low,1,9,0,0,60
-Refusal to answer questions or re-explain material,Faculty,Medium,4,7,1,0,50
-Students skip lectures when detailed notes or slides are already provided,Attendance,Medium,0,11,1,0,73
-exam system or software crashing during final submissions severely impacting grades,Examination,High,3,11,2,0,83
-Claim that exam questions emphasized trivial details rather than core concepts,Examination,Medium,3,11,1,0,78
-"Students entering classrooms and yelling obscenities, then denying responsibility",Discipline,High,2,9,2,0,81
-"students attend online sessions while doing other activities (e.g., driving)",Discipline,Low,2,10,0,0,76
-"""She requests to make up time by coming early but does not follow through.""",Attendance,Medium,0,14,1,0,75
-"""I find it difficult to attend classes every day.""",Attendance,Low,0,9,0,0,50
-Lack of clarity on whether FIR is required for duplicate certificate issuance,Certificate & Records,Low,1,12,0,0,77
-Employers encountering high volume of fake academic certificates during hiring,Certificate & Records,Low,1,10,0,0,78
-institutions using certificates as leverage to enforce payment or compliance,Certificate & Records,High,1,10,2,0,76
-students using basic templates to generate doctor’s notes from scratch,Certificate & Records,Low,1,10,0,0,70
-"Students forced to gather character evidence (other professors, peers) to defend themselves",Discipline,High,2,12,2,0,91
-Students unclear if participation in investigation is optional or required,Discipline,Low,2,10,0,0,74
-"""Because of this mismatch, my attendance percentage is dropping and it may affect exam eligibility.""",Attendance,High,0,15,2,0,100
-"""Class attendance drops drastically after first year.""",Attendance,Low,0,7,0,0,54
-lack of exam preparation materials or study guides,Examination,Medium,3,8,1,0,50
-Breakdown in instructional responsibility affecting entire class,Faculty,High,4,7,2,0,64
-Original passed certificate not issued despite long pending applications,Certificate & Records,High,1,9,2,0,72
-Retaliation against students for disagreement or complaints,Faculty,High,4,7,2,0,59
-Students needing to self-advocate aggressively to receive entitled support,Discipline,Medium,2,9,1,0,74
+text,label,priority,label_id,word_count,priority_id_fixed,priority_imputed,text_len,review_status,review_notes,review_has_notes,review_was_corrected
+Building access systems and key management are sometimes so poorly handled that they create daily security inconvenience.,Safety & Security,Low,12,17,0,0,121,,library usability moderate impact,1,0
+“Not being fully prepared for classes.”,Faculty,Medium,4,6,1,0,39,,,0,0
+Limited access to research databases is seriously affecting my ability to complete my thesis properly.,IT & Digital Services,High,6,15,2,0,102,,,0,0
+I informed the teacher about the issue but no correction has been made.,Attendance,Medium,0,13,1,0,71,,,0,0
+"Technology is being blamed as the only issue in some discussions, while schools fail to address related problems like poor digital discipline, weak controls, and lack of digital responsibility.",IT & Digital Services,Medium,6,29,1,0,193,,,0,0
+Sam takes time off euite oftn even if reasons are valid.,Attendance,Medium,0,11,1,0,56,,,0,0
+"During the introduction session at hostel, we were called late at night which made all of us nervous because we didn’t know what would happen.",Ragging & Harassment,Low,11,25,0,0,142,,,0,0
+My dad stole my scholarship money months ago and now I’m working my ass off to make up the rest of it,Lost & Found,High,9,22,2,0,101,,,0,0
+"There are cases where universities spend so much money overall but still fail to provide basic, usable desks and seating for students.",Infrastructure,Medium,7,22,1,0,134,,system outage affects exams and priority corrected and priority corrected,1,0
+We are not properly guided about different career options or paths.,Placement & Career Services,Low,10,11,0,0,67,,,0,0
+"Pumps run only for a few hours early morning, and once water is over, there’s no refill throughout the day.",Infrastructure,Medium,7,20,1,0,107,,,0,0
+“I was forced to imitate Sunny Leone as part of ragging.”,Ragging & Harassment,Medium,11,11,1,0,57,,,0,0
+Only 2 guys in my class had the required 75% attendance.,Attendance,High,0,11,2,0,56,,attendance policy issue moderate impact and priority corrected and priority corrected,1,0
+"The digital portal feels messy, and it could definitely be organized in a better way.",IT & Digital Services,Low,6,15,0,0,85,,,0,0
+A new student openly threatened to shoot classmates and harm them violently on his very first day.,Safety & Security,High,12,17,2,0,98,,,0,0
+Marksheets and transcripts provided without any exams being conducted,Certificate & Records,Medium,1,9,1,0,69,,,0,0
+educational recorvs not maintained beyond limited yeaars,Certificate & Records,Low,1,7,0,0,56,,record policy issue not severe,1,0
+"Even after following all proper steps and giving formal notice, it feels like we’re being made to chase them unnecessarily for something they already agreed to refund.",Fees,Low,5,27,0,0,167,,,0,0
+"People are used to these small outages now, but that doesn’t mean it’s acceptable.",Infrastructure,Medium,7,14,1,0,82,,Medium and priority corrected and priority corrected,1,0
+"When academic results shown online are wrong, students lose trust in the student portal because it is supposed to be the official source of their academic information.",IT & Digital Services,High,6,27,2,0,167,,,0,0
+It just feels like maintaining washrooms isn’t a priority at all.,Infrastructure,Low,7,11,0,0,65,,label corrected based on content,1,0
+They should at least check bags or do inspections when theft happens but nothing like that is done,Lost & Found,Medium,9,18,1,0,98,,,0,0
+I felt nervous going to the library because I thought they would blame me.,Library,Medium,8,14,1,0,74,,,0,0
+"Home internet needs for school are being treated like optional extras, even though online instruction clearly depends on them.",IT & Digital Services,Low,6,19,0,0,126,,,0,0
+uncertainty about how mucn studying is enough fr exams,Examination,Low,3,9,0,0,54,,,0,0
+"So many phones were stolen at once and the CCTV in that area wasn’t even working, which makes it worse.",Lost & Found,High,9,20,2,0,103,,,0,0
+instructor ignores student emails or concerns about minor academic issues like grading clarity,Faculty,Low,4,13,0,0,94,,,0,0
+students challenging grading without engaging with feedback or rubric idk what to do,Examination,High,3,13,2,0,84,,,0,0
+Students attending ozline sessions while driving,Discipline,Medium,2,6,1,0,48,,,0,0
+The companies involved in placements look very suspicious and feel like scams.,Placement & Career Services,High,10,12,2,0,78,,,0,0
+Continuous audio surveillance has created fear among students to speak freely even in open spaces.,Safety & Security,High,12,15,2,0,98,,,0,0
+"Some libraries do not have modern facilities like events, play areas, or digital resources.",Library,Low,8,14,0,0,91,,,0,0
+I hate when two buses show up together after you’ve been waiting forever for one.,Transportation,High,13,15,2,0,81,,,0,0
+students said parts of diagrams did not correspond to question labels idk what to do,Examination,High,3,15,2,0,84,,,0,0
+Offering a £100 voucher after throwing away a student’s belongings feels insulting.,Lost & Found,Medium,9,12,1,0,83,,label corrected based on content and priority corrected,1,0
+Money has been stolen multiple times in our class before like 400 or even 1000 and still nothing is being done,Lost & Found,High,9,21,2,0,110,,,0,0
+"The driver suddenly stopped the bus in the middle of the road and argued with another driver for several minutes. Everyone inside was getting late, but no one cared.",Transportation,High,13,29,2,0,165,,,0,0
+"During the senior interaction, I was asked personal questions in front of everyone, and even though nothing serious happened, the situation felt embarrassing.",Ragging & Harassment,Low,11,23,0,0,158,,,0,0
+refuses to clarify grading criteria...,Faculty,Medium,4,5,1,0,38,,,0,0
+Avoids adapting teaching style despte confusixn idk what to do,Faculty,Low,4,10,0,0,62,,,0,0
+"Public transport is so unreliable that I never know if I’ll reach on time. Buses get cancelled without notice, and we’re just left waiting with no information.",Transportation,High,13,27,2,0,159,,,0,0
+What starts as discomfort eventually turns into daily stress for students.,Infrastructure,High,7,11,2,0,74,,slow wifi not severe enough for high and priority corrected and priority corrected,1,0
+Hostel students are facing daily water shortages for over two weeks with no proper solution from management.,Infrastructure,Low,7,17,0,0,108,,lack of privacy serious issue,1,0
+There is very little guidance from colleges on how to identify genuine internships.,Placement & Career Services,Medium,10,13,1,0,83,,,0,0
+"I tried looking for well-known authors and classics, but the library hardly has any of them anymore.",Library,High,8,17,2,0,100,,,0,0
+People are treating the library like a place to dump unsolicited religious material instead of respecting it as a public resource.,Library,High,8,21,2,0,130,,,0,0
+professor does not return graded work in time for improvemnt before next assessments,Faculty,Medium,4,13,1,0,84,,,0,0
+Retaliates against complaints,Faculty,High,4,3,2,0,29,,,0,0
+Female students avoided the college canteen due to constant harassment at the entrance.,Safety & Security,Medium,12,13,1,0,87,,label corrected based on content and priority corrected,1,0
+“They made us read erotic content aloud and replace the female character’s name with ‘my mother’.”,Ragging & Harassment,High,11,16,2,0,98,,,0,0
+I wish there were clearer signboards for directions near the bus stand.,Transportation,Low,13,12,0,0,71,,,0,0
+"Honestly, fee communication should be much more straightforward.",Fees,Low,5,8,0,0,64,,,0,0
+"Even though nothing major usually happens, the school could still improve its everyday safety visibility.",Safety & Security,Low,12,15,0,0,105,,,0,0
+"Sometimes I can’t log in to the academic portal at all, and there is no quick support.",IT & Digital Services,High,6,17,2,0,86,,,0,0
+"Policies requirin meetings, witnessea, or formal procedures add complexity and discourage enforceemnt",Discipline,Medium,2,12,1,0,101,,,0,0
+No digital record of marks or grades available,Certificate & Records,Low,1,8,0,0,46,,,0,0
+"Some lecture halls feel overcrowded, and the seating arrangement doesn’t seem to match the number of students attending the class.",Infrastructure,Medium,7,20,1,0,130,,label corrected based on content,1,0
+"Staff injuries are being treated like part of the job, which is disturbing and unsafe.",Safety & Security,High,12,15,2,0,86,,,0,0
+I feel like I’m being treated as a number in the placement record rather than as someone with a real career plan.,Placement & Career Services,Medium,10,22,1,0,113,,,0,0
+student unable to verify convocation certificate authenticity,Certificate & Records,Low,1,7,0,0,61,,,0,0
+there was a placement fee too,Placement & Career Services,Low,10,6,0,0,29,,,0,0
+“My brother and his friends were beaten with sticks after they resisted when seniors pulled off his cloth and opened all of his hair.”,Ragging & Harassment,High,11,24,2,0,134,,,0,0
+"Companies promising internships often end up asking for money in the name of training, which feels like exploitation of freshers.",Placement & Career Services,High,10,20,2,0,129,,,0,0
+conduct system being used against studentss who advocate for their rights so frustrated,Discipline,High,2,13,2,0,87,,,0,0
+"Without working flush systems, things just get left behind, which makes it worse for everyone else.",Infrastructure,Low,7,16,0,0,99,,,0,0
+Students are forced to adjust their financial plans due to sudden academic policy changes.,Fees,Medium,5,14,1,0,90,,opinion without actionable issue and priority corrected and priority corrected,1,0
+faculty gives inconsistent instructions acrosss differenu classes of the same course,Faculty,Low,4,11,0,0,84,,,0,0
+"There is concern that students are spending so much time on screens that they are missing out on imagination, reflection, and deeper engagement with learning.",IT & Digital Services,Low,6,25,0,0,158,,,0,0
+"One teacher constantly bullied me for years, making me feel like I was the problem even though I did nothing wrong. Even after 20 years, I still think about it.",Ragging & Harassment,High,11,30,2,0,160,,label corrected based on content and priority corrected,1,0
+Sometimes the fee portal itself is confusing and not easy to understand.,Fees,Low,5,12,0,0,72,,,0,0
+It’s difficult to judge whether an internship is adding value until it’s already over.,Placement & Career Services,Low,10,14,0,0,86,,,0,0
+"My personal things have been taken without permission several times, and it keeps happening.",Lost & Found,Medium,9,14,1,0,92,,,0,0
+he continues to miss work witout proper prior notice.,Attendance,High,0,9,2,0,53,,,0,0
+Carrying shopping bags or personal items from stop to stop gets old very quickly.,Transportation,Low,13,14,0,0,81,,,0,0
+man yof us went and filed complaaint after tthat last class.,Faculty,High,4,11,2,0,60,,grading influenced externally serious and priority corrected and priority corrected,1,0
+"The network issues have been going on for weeks, but nothing has improved even after reporting the problem to IT support.",IT & Digital Services,High,6,21,2,0,121,,,0,0
+I find it hard to balance attendance with other activities.,Attendance,Low,0,10,0,0,59,,,0,0
+Some of the library benches are so uncomfortable that I avoid using those areas altogether.,Library,Low,8,15,0,0,91,,,0,0
+"Even when workarounds like clearing cache or updating a device help some users, students should not have to troubleshoot so much for a basic academic service.",IT & Digital Services,Medium,6,26,1,0,158,,,0,0
+effort throughout the semester not reflecteed in final grade pls help,Examination,Low,3,11,0,0,69,,grading strictness moderate,1,0
+there are constructions going on in our college since before i even joined 3 years ago. those buildings are still not usable. nobody gives updates on when it will be done. the whole thing just sits there like a skeleton,Infrastructure,High,7,40,2,0,219,,,0,0
+poor classroom design affecting focus and comfort,Infrastructure,Medium,7,7,1,0,49,,,0,0
+Placement training sessions feel very basic and not really helpful.,Placement & Career Services,Low,10,10,0,0,67,,,0,0
+I sometimes forget to attend classes.,Attendance,Low,0,6,0,0,37,,,0,0
+Cofusion about response time of grievance portals like CPGRAMS,Certificate & Records,Low,1,9,0,0,62,,,0,0
+students claimed some questions could not be interpreted at all so frustrated,Examination,High,3,12,2,0,77,,,0,0
+I paid the fee on time but still I am getting penalty mail saying payment is late. The system is not updating properly.,Fees,High,5,23,2,0,119,,,0,0
+"I had specifically asked them not to touch my things, but they ignored me and still handled everything.",Lost & Found,High,9,18,2,0,103,,priority corrected based on severity,1,0
+“Reaming a student out in front of everyone.”,Faculty,High,4,8,2,0,45,,,0,0
+I was detianed i first year because my attendance was 54% and had t repeat the wholo year.,Attendance,High,0,18,2,0,90,,,0,0
+"Even after incidents like this, nothing changes in how things are managed during exams.",Lost & Found,Medium,9,14,1,0,87,,,0,0
+"The seniors beat students who did not understand something immediately, and that kind of behavior is absolutely unacceptable. Nobody deserves to be hit just because they could not grasp something quickly.",Ragging & Harassment,High,11,31,2,0,204,,,0,0
+"“I have a conference coming up soon where this professor will also be present, and I honestly don’t know how to handle it. I’m considering canceling because I don’t feel ready or safe enough to see him again so soon.”",Ragging & Harassment,Medium,11,40,1,0,217,,,0,0
+I regret not networking earlier because now it feels like I missed some opportunities.,Placement & Career Services,Low,10,14,0,0,86,,,0,0
+It’s annoying how they don’t even acknowledge how much financial pressure this sudden change is causing students.,Fees,High,5,17,2,0,113,,,0,0
+Colleges manage crises by shifting batches online instead of actually fixing infrastructure issues.,Infrastructure,Medium,7,13,1,0,99,,,0,0
+Honestly its kinda irritating how fee notices are not given properly and we come to know at last moment.,Fees,Low,5,19,0,0,104,,,0,0
+She regularly pushes the boundaries of the one hour flex time policy.,Attendance,Medium,0,12,1,0,69,,,0,0
+"Complaining about tests being on specific days (e.g., Monday)",Discipline,Low,2,9,0,0,61,,,0,0
+"Even when students are honest about financial mistakes, college administration can still handle the issue in a careless way that creates more stress",Fees,Medium,5,23,1,0,148,,,0,0
+Placement departments ignore students’ financial difficulties and push them to accept unsuitable offers.,Placement & Career Services,Medium,10,13,1,0,104,,desk usability moderate issue and priority corrected and priority corrected,1,0
+institutions lacking clear policies on verifying authenticity of submitted medical documents,Certificate & Records,Medium,1,11,1,0,92,,,0,0
+students being requireed to attend conduct meetings without prior disclosure of accusations,Discipline,High,2,12,2,0,91,,,0,0
+"Some students cannot use hotspot or mobile data plans, so the campus Wi-Fi is their only option, and when it fails they have no alternative.",IT & Digital Services,High,6,25,2,0,140,,,0,0
+Colleges linking document return to financia lsettlement,Certificate & Records,High,1,7,2,0,56,,document linked to payment serious issue and priority corrected and priority corrected,1,0
+"It is frustrating when passengers or parents think every delay or problem is automatically the driver’s fault, even when it is caused by traffic, trains, or things outside the driver’s control.",Transportation,Medium,13,31,1,0,193,,,0,0
+Institutions ignoring official circulars and continuing illegal practices,Certificate & Records,High,1,8,2,0,73,,,0,0
+Some teachers feel they have no option except leaving the profession because the school environment no longer feels safe.,Safety & Security,High,12,19,2,0,121,,,0,0
+Students have confirmed that such cameras actually existed in their institutions.,Safety & Security,High,12,11,2,0,81,,system design mismatch moderate and priority corrected and priority corrected,1,0
+"Two laptops got stolen from same floor and still no action taken, how is security this bad honestly",Lost & Found,High,9,18,2,0,99,,,0,0
+“incorrct or misleading assignment instructions affecting grades.”,Faculty,High,4,7,2,0,66,,,0,0
+I keep getting different instructions from different staff about how to collect my documents.,Lost & Found,Low,9,14,0,0,93,,,0,0
+difficulty transitionig from homeworrk success to exam performance,Examination,Medium,3,8,1,0,66,,,0,0
+"Sometimes the bus is so crowded that the conductor tells people not to get in, but there is no next bus for a long time.",Transportation,High,13,25,2,0,120,,,0,0
+The shortlisting process during placements seems biased and unfair.,Placement & Career Services,Medium,10,9,1,0,67,,,0,0
+Complaints against harassment or discrimination were dismissed as “tradition.”,Safety & Security,Medium,12,9,1,0,78,,,0,0
+Colleges linking CRT fee payment with exam fee submission is completely unethical and stressful for students.,Fees,High,5,16,2,0,109,,,0,0
+"There were people taking up whole tables without even doing any work, just talking and hanging out, which made the library feel more like a pub than a library.",Library,Medium,8,29,1,0,159,,,0,0
+"Security staffing can be inconsistent, with some personnel taking the job seriously and others seeming ineffective.",Safety & Security,Medium,12,16,1,0,115,,,0,0
+It’s frustrating that even simple lost items can turn into a huge search because every office handles them differently.,Lost & Found,Low,9,19,0,0,119,,,0,0
+"“I noticed that teachers treated some students with respect and others with irritation, and I was usually in the second group.”",Ragging & Harassment,Low,11,21,0,0,127,,,0,0
+students failing to engage with structrued learning processes lke drafts and peer review,Examination,Medium,3,13,1,0,88,,,0,0
+"being brash, arrogatn, talking down to students",Faculty,Medium,4,7,1,0,47,,,0,0
+Students with extremely low attention span and inability to focus idk what to do,Discipline,Medium,2,14,1,0,80,,class size issue moderate impact and priority corrected and priority corrected,1,0
+"Impractical requirements (e.g., no open-toe shoes in hot heather)",Discipline,Medium,2,9,1,0,65,,,0,0
+"Desktop-to-dongle setups are less ideal than laptops with built-in enterprise-ready wireless, so the transition method itself is a concern.",IT & Digital Services,Medium,6,19,1,0,139,,,0,0
+students hesitant to escalate issue due to fear of complicagions,Certificate & Records,Medium,1,10,1,0,64,,,0,0
+Sometimes items go missing and we are not sure if it’s theft or confusion which is frustrating,Lost & Found,Low,9,17,0,0,94,,,0,0
+Instructors not covering required syllabus topics adequately pls help,Faculty,Medium,4,9,1,0,69,,,0,0
+Some departments enforce attendance strictly while oothers completely ignore it.,Attendance,Medium,0,10,1,0,80,,,0,0
+"Video-based online classes use a lot of data, which can be difficult for families relying on mobile data or limited internet plans.",IT & Digital Services,Low,6,22,0,0,131,,,0,0
+I want to report that teachers sometimes punish the whole class for the mistake of one student. This creates frustration and anger among students and leads to arguments between classmates. Such punishment feels unfair and unnecessary.,Ragging & Harassment,Medium,11,36,1,0,234,,,0,0
+Hides conflict of intsrest (own srequired system),Faculty,Medium,4,7,1,0,49,,,0,0
+difficulty explaining solutions despite solving problems so frustrated,Examination,Low,3,8,0,0,70,,,0,0
+It feels like these desks were chosen because they were cheaper rather than because they work well.,Infrastructure,Low,7,17,0,0,99,,,0,0
+College refusing to return documents after student discontinues course,Certificate & Records,High,1,9,2,0,70,,,0,0
+I realized something was off when the interview questions were unrealistically easy and barely related to the actual role.,Placement & Career Services,Low,10,19,0,0,122,,,0,0
+Honestly it feels like the fee system is not organized at all and students are left to figure things out on their own. It shouldn’t be this complicated.,Fees,Medium,5,28,1,0,152,,,0,0
+You can barely place your materials properly on the desk without worrying something will fall.,Infrastructure,Low,7,15,0,0,94,,repeated issue moderate,1,0
+Students are basically forced to adjust to these conditions every single day.,Infrastructure,Medium,7,12,1,0,77,,delay in fixing issue moderate and priority corrected and priority corrected,1,0
+"Buses do not follow a reliable schedule, so you often end up waiting a long time and have to leave much earlier than necessary just to be safe.",Transportation,Medium,13,28,1,0,143,,,0,0
+I shouldn’t have to think about getting duplicate documents made just because the college refuses to return my originals.,Lost & Found,Medium,9,19,1,0,121,,,0,0
+Students are not given a choice even though the extra year was initially declared optional.,Fees,High,5,15,2,0,91,,,0,0
+"I want to report the mental impact of constantly seeing classmates beaten and humiliated. Even students who were never directly punished started shaping their entire behavior around avoiding attention, avoiding mistakes, and pleasing authority figures at any cost. That environment was emotionally unhealthy for everyone.",Ragging & Harassment,Medium,11,45,1,0,321,,,0,0
+"Some students say the available drinking water isn’t even safe to consume, which makes the situation worse.",Infrastructure,Low,7,17,0,0,107,,complaint channel issue not severe,1,0
+"The computer labs are there, but many students don’t know where they are located.",Infrastructure,Low,7,14,0,0,81,,,0,0
+"Not a single water cooler or backup arrangement was available, and students were literally searching everywhere just to drink water.",Infrastructure,Low,7,20,0,0,132,,perception issue minor,1,0
+The one who sexually harassed me as an udergrad.,Faculty,High,4,9,2,0,48,,,0,0
+Students feel that real merit and skills have little value in college placements.,Placement & Career Services,High,10,13,2,0,81,,label corrected based on content and priority corrected,1,0
+"If the Wi-Fi goes down in a wireless-only office, users may lose access to everything at once because there is no wired fallback.",IT & Digital Services,Low,6,23,0,0,129,,,0,0
+students accidentally submitting blank signed medical certifiacte shets along with assignents idk what to do,Certificate & Records,Low,1,15,0,0,108,,,0,0
+"“A large group of male students kept harassing me in class, and it wasn’t limited to school. They also started showing up outside campus, including at my workplace, which made me feel like I couldn’t get away from it.”",Ragging & Harassment,High,11,39,2,0,218,,,0,0
+"I had to take a loan just to pay the college fees, and now I am worried how I will manage future payments also.",Fees,High,5,24,2,0,111,,,0,0
+There should have been at least one staff member monitoring the area where bags were kept.,Lost & Found,Medium,9,16,1,0,90,,,0,0
+I have a medical certificate for the days I was absent but the college is not ccepting it for attendance condonation.,Attendance,High,0,21,2,0,117,,attendance condonation affects academic status,1,0
+Some shared areas would feel safer with more consistent adult visibility.,Safety & Security,Low,12,11,0,0,73,,,0,0
+EB staff can’t even give a proper timeline. They just keep saying “1 hour” and drag it to 3 hours. No accountability at all.,Infrastructure,Medium,7,24,1,0,124,,,0,0
+Gives awkward or irrelevant examples,Faculty,Low,4,5,0,0,36,,,0,0
+"Private engineering colleges in Bangalore are charging lakhs in fees but paying associate professors as little as ₹20,000 a month. If the money isn't going to the staff or the students, where exactly is it going? Nobody seems to be accountable for it.",Fees,Medium,5,43,1,0,251,,,0,0
+“Reading textbook material but not expplaining it.”,Faculty,Medium,4,7,1,0,51,,,0,0
+The college refuses to help with verification if students plan to go for higher studies.,Placement & Career Services,High,10,15,2,0,88,,,0,0
+Asskrtion that partial credit awarded was too low fro demonstrated work,Examination,Medium,3,11,1,0,71,,,0,0
+"On narrow roads, you don’t always have the luxury of staying perfectly in your lane. With parked vehicles and shops on the side, you’re forced to drive in awkward positions.",Transportation,Medium,13,30,1,0,173,,,0,0
+"Students in districts without hotspot programs are clearly worse off than students in districts that provide internet support, creating unequal access to education.",IT & Digital Services,Medium,6,23,1,0,164,,penalty fairness moderate issue and priority corrected and priority corrected,1,0
+"""'Women can't write and will never be featured in this class.'"" pls help",Faculty,High,4,13,2,0,72,,,0,0
+"Sometimes students bring snacks in their bags, eat at the desk, and leave the wrappers behind without thinking about the mess.",Library,Medium,8,21,1,0,126,,,0,0
+I missed internal assessments because of attendance shortmge and nw my rseuls are affected.,Attendance,High,0,14,2,0,91,,internal marks affected due to attendance and priority corrected and priority corrected,1,0
+students relying on eaily available online templates for medical documentation,Certificate & Records,Low,1,10,0,0,78,,,0,0
+Many internships seem more focused on giving certificates than actually helping us build strong skills.,Placement & Career Services,Low,10,15,0,0,103,,label corrected based on content,1,0
+"The service is not bad all the time, but it’s unreliable often enough to be frustrating.",Transportation,Medium,13,16,1,0,88,,,0,0
+"“The harassment didn’t stop at school. Because of what teachers told my parents, I had to face physical abuse at home too.”",Ragging & Harassment,High,11,22,2,0,123,,,0,0
+I’m being pressured to opt out of placements even though I only want to apply for roles that match my career goals.,Placement & Career Services,High,10,22,2,0,115,,,0,0
+Sometimes it feels like management just ignores these issues completely,Lost & Found,Low,9,10,0,0,71,,label corrected based on content and priority corrected,1,0
+Failure to explain reasoning behind decisions clearlz,Discipline,Low,2,7,0,0,53,,,0,0
+"There are sometimes too many copies of the same kind of books, while other types of books are missing.",Library,Low,8,19,0,0,102,,,0,0
+"When the internet is slow, even simple tasks like opening PDFs or uploading files become frustrating.",IT & Digital Services,Medium,6,16,1,0,101,,,0,0
+I feel like there is no proper system to track fee payments easily.,Fees,Low,5,13,0,0,67,,,0,0
+Even average sized students struggle to use these desks properly.,Infrastructure,Low,7,10,0,0,65,,system failure blocks exam,1,0
+belief that expectations for an a were higher than in previous courses,Examination,Low,3,12,0,0,70,,,0,0
+It seems like the college is actually paying companies just to hire students.,Placement & Career Services,High,10,13,2,0,77,,,0,0
+College not returning 10th cerrificate after student dropped out dug to financial constraints,Certificate & Records,High,1,13,2,0,93,,,0,0
+She was running a few inutes late on a regular basis.,Attendance,Low,0,11,0,0,53,,,0,0
+"In busy areas, the road is shared with bikes, cars, parked vehicles, and pedestrians, so it’s difficult to keep proper control all the time.",Transportation,Medium,13,24,1,0,140,,furniture limitation minor and priority corrected and priority corrected,1,0
+submission of medical notes with fake or disconnected phone numbres for verification,Certificate & Records,Medium,1,12,1,0,84,,,0,0
+"There are very few left-handed desks available, and when those are taken, it becomes uncomfortable for left-handed students to write during lectures.",Infrastructure,Medium,7,22,1,0,149,,,0,0
+"Honestly, the lack of transparency about the bond and fee rules is what makes this situation worse.",Fees,Medium,5,17,1,0,99,,,0,0
+Confusion due to mismatch between portal data and phsical certificates...,Certificate & Records,Low,1,10,0,0,73,,,0,0
+"Sometimes the bus shows the wrong number, and people miss it because they think it’s the wrong route.",Transportation,Medium,13,18,1,0,101,,,0,0
+Minimal effort from satff to de-escalate frrustrated students,Discipline,Low,2,8,0,0,61,,lack of follow up moderate,1,0
+Fear that disciplinary records may damage future academic/career opportuniteis,Discipline,High,2,9,2,0,78,,,0,0
+"You can travel by bus, but it’s not easy or comfortable.",Transportation,Low,13,11,0,0,56,,,0,0
+"There was also a strong culture of fear around complaining. Students knew that if they spoke up, they could face worse treatment later, especially if the teacher was senior or close to the principal. Because of this, many incidents of harassment went unreported.",Ragging & Harassment,Medium,11,43,1,0,262,,,0,0
+The security guard led me toward an isolated room and behaved in a way that felt predatory and threatening.,Safety & Security,High,12,19,2,0,107,,,0,0
+use of conduct system to suppress complaints againt staff behavior,Discipline,High,2,10,2,0,66,,,0,0
+"“I was never encouraged in areas I was good at, like creative work. It felt like only academics mattered to them.”",Ragging & Harassment,Medium,11,21,1,0,114,,,0,0
+“I felt like teachers didn’t care about how their words or actions affected us as students.”,Ragging & Harassment,Low,11,16,0,0,92,,,0,0
+Unfai evaluation where marks increased significantly after revaluation request,Certificate & Records,High,1,9,2,0,78,,label corrected based on content and priority corrected,1,0
+soap dispensers are empty half the time,Infrastructure,Low,7,7,0,0,39,,,0,0
+My college sent a lawyer's notice demanding full remaining fees after I dropped out. I'm scared and confused because AICTE guidelines clearly say colleges can't charge more than ₹1000 as deduction when a student leaves. They're using legal intimidation to squeeze money out of struggling families.,Fees,High,5,46,2,0,297,,,0,0
+"Tailgating happens even on bike lanes. When someone rides right behind you with no space, it feels unsafe and pressuring.",Transportation,High,13,20,2,0,121,,,0,0
+It’s really frustrating that they are not considering a pro-rata fee and just demanding the entire amount without any flexibility.,Fees,High,5,20,2,0,130,,,0,0
+Private school fees in Bangalore have crossed 2 lakhs a year and honestly the quality of teaching hasn't improved at the same rate. Teachers still jump schools like IT people switch jobs — so the consistency students pay for isn't really there.,Fees,Medium,5,42,1,0,244,,,0,0
+potential legal impliations of accepting forged medial documents without verification,Certificate & Records,High,1,10,2,0,85,,,0,0
+administrative processes interfering with student’s ability to complete finals,Discipline,High,2,9,2,0,78,,,0,0
+Excessively hrash grading without ujstification,Faculty,High,4,5,2,0,47,,teaching inefficiency moderate and priority corrected and priority corrected,1,0
+"failure to acknotledge urgency of student concerns durinj critical periods (e.g., finals)",Discipline,Low,2,12,0,0,89,,minor behavioral issue,1,0
+students reported that guessing was required due to unclear questions,Examination,High,3,10,2,0,69,,,0,0
+It’s annoying that we have to double check everything before leaving the room every time,Lost & Found,Low,9,15,0,0,88,,,0,0
+The library is sometimes more distracting than home because of how noisy and chaotic people behave.,Library,High,8,16,2,0,99,,,0,0
+i feel attendance tracking ghould be simpler.,Attendance,Low,0,7,0,0,45,,,0,0
+The noise problem becomes worse when exams are near because students come in groups and talk more.,Library,Medium,8,17,1,0,98,,,0,0
+lack of transparency rn disciplinary investigations,Discipline,Medium,2,6,1,0,51,,accountability issue moderate and priority corrected and priority corrected,1,0
+I was worried that I might not get my certificate at all because of a library issue.,Library,High,8,17,2,0,84,,,0,0
+"Students unsure how formally to behve (dress, communication style) n meetnigs",Discipline,Low,2,11,0,0,77,,,0,0
+Staff threatening to call the police over small issues like bringing a skateboard feels unnecessary and intimidating.,Library,High,8,17,2,0,117,,label corrected based on content,1,0
+"I wish there were more bike lanes near the university, it would make it easier to commute by bike.",Transportation,Low,13,19,0,0,98,,,0,0
+"I want to mention that one ongoing issue was the emotional pressure created by authority figures who believed fear automatically meant respect. Because of this mindset, many teachers used harshness as a standard method, which made students feel trapped rather than guided.",Ragging & Harassment,Low,11,42,0,0,272,,,0,0
+My attendance situation was so bad that I was expecting academic consequences.,Attendance,High,0,12,2,0,78,,,0,0
+"When the library is consistently loud, it stops functioning as a dependable study space for students with assignments, exams, or research work.",Library,Medium,8,22,1,0,143,,label corrected based on content and priority corrected,1,0
+"“Seniors forced us to keep a clean shave, get short haircuts, and wear formals.”",Ragging & Harassment,Medium,11,14,1,0,80,,,0,0
+“I often felt alone in dealing with these issues because no one really acknowledged them.”,Ragging & Harassment,Low,11,15,0,0,90,,,0,0
+"On our first hostel night, seniors called us into a smoke-filled room, abused us badly, and started humiliating us one by one. One of my roommate was slapped, insulted, stripped down to vest and underwear, and forced into obscene acts while crying.",Ragging & Harassment,High,11,42,2,0,248,,,0,0
+Seniors threatened us that things would get worse if we complained.,Ragging & Harassment,Medium,11,11,1,0,67,,no response moderate issue and priority corrected and priority corrected,1,0
+parents blaming schools for children’s behavior,Discipline,Medium,2,6,1,0,47,,,0,0
+The teacher would play porn duringg class,Faculty,High,4,7,2,0,41,,,0,0
+The fine amount made me anxious because I could not afford to pay it.,Library,Medium,8,14,1,0,69,,poor enforcement of quiet rules moderate issue and priority corrected and priority corrected,1,0
+Students unaware of expected timelines for certificate issuane,Certificate & Records,Low,1,8,0,0,62,,,0,0
+Staff are expected to manage dangerous fights even though they are not trained or protected for that kind of risk.,Safety & Security,High,12,20,2,0,114,,,0,0
+"“Even when the school said they were putting rules in place, I didn’t feel like anything actually changed for me in the classroom.”",Ragging & Harassment,Low,11,23,0,0,131,,,0,0
+"“I was slapped hard in front of the entire class because I had a boyfriend, and the teacher even said if I was his daughter, he would have thrown me from the third floor.”",Ragging & Harassment,High,11,34,2,0,171,,,0,0
+"The library is often too noisy, even in areas that are supposed to be quiet, and it becomes very difficult to study or concentrate properly.",Library,High,8,25,2,0,140,,,0,0
+“They even tried to make me eat a leaf nearby just for fun during ragging.”,Ragging & Harassment,Low,11,15,0,0,75,,,0,0
+group work imbalance affecting exam or final performance,Examination,Medium,3,8,1,0,56,,,0,0
+The delay in responding to academic data errors makes students feel that important digital record problems are not being treated with the seriousness they deserve.,IT & Digital Services,High,6,25,2,0,163,,,0,0
+"Some libraries still do not send proper reminders before due dates, which makes it easy to miss returns.",Library,Low,8,18,0,0,104,,,0,0
+"Profemsor frequently goes off-topci during lectures, reducing actual teaching time",Faculty,Low,4,10,0,0,82,,grading method issue,1,0
+"Even when the issue is not huge, the portal experience is frustrating enough to waste a lot of time.",IT & Digital Services,Low,6,19,0,0,100,,,0,0
+concern that grading did not reflect steady but modest improvement,Examination,Low,3,10,0,0,66,,redirection issue moderate,1,0
+"Sometimes the bus shows up late, sometimes early, and sometimes not at all, so you never know what to expect.",Transportation,Medium,13,20,1,0,109,,,0,0
+"""I was not consistent witj attendance throughout the course."" rly urgent",Attendance,Low,0,11,0,0,72,,,0,0
+they are charging 12k per student for personality development program,Placement & Career Services,High,10,10,2,0,69,,,0,0
+Difficulty navigatdng university portal for basic services idk what to do,Certificate & Records,Low,1,11,0,0,73,,,0,0
+feeling singled out as “the only one” who doesn’t fit properly,Infrastructure,High,7,11,2,0,62,,label corrected based on content and priority corrected,1,0
+"Buses are often not maintained well, and the seats are uncomfortable, which makes daily travel more tiring than it should be.",Transportation,Low,13,21,0,0,125,,control issue moderate,1,0
+"At certain times, the washrooms become almost unusable because of how bad it gets.",Infrastructure,Low,7,14,0,0,82,,comfort issue moderate impact,1,0
+"Policies feel inconsistent or unclear, making students unsure about what is actually allowed.",Library,High,8,13,2,0,93,,label corrected based on content and priority corrected,1,0
+"In a business environment with phones, video meetings, cloud services, and many concurrent users, unreliable wireless access can quickly affect productivity across the whole office.",IT & Digital Services,Low,6,25,0,0,181,,,0,0
+lack of institutional response to accessibility concerns,Infrastructure,High,7,7,2,0,56,,,0,0
+"The transport incharge at my school called out my parents as ""unprofessional and illiterate"" in front of other teachers just because they stopped the bus service mid-year. I was a student standing right there and had to hear that. It messed me up for days.",Fees,High,5,45,2,0,256,,,0,0
+Students often buy projects or certificates just to satisfy college internship requirements rather than gain actual experience.,Placement & Career Services,Medium,10,17,1,0,127,,,0,0
+Drivers sometimes stop for no reason and waste time.,Transportation,Low,13,9,0,0,52,,road sharing issue moderate,1,0
+invigilators or exam staff allegedly enabling or ignoring cheating behavior,Examination,High,3,10,2,0,75,,,0,0
+delay of several months in receiving duplicate certificates from boards,Certificate & Records,Medium,1,10,1,0,71,,,0,0
+"Teachers often took out their frustration on students through verbal abuse, threats, and unnecessary punishments. Instead of guiding students, they created an atmosphere where everyone was anxious about being insulted or targeted in front of the class. This kind of harassment affected confidence and interest in studies.",Ragging & Harassment,Medium,11,47,1,0,321,,,0,0
+Colleges care more about collecting internship proof than whether the internship was genuine or useful.,Placement & Career Services,Medium,10,15,1,0,103,,,0,0
+Students have to run speed tests or try different devices just to check if the network is working properly.,IT & Digital Services,Medium,6,19,1,0,107,,,0,0
+Something as important as an original marks card should never be treated like a bargaining tool by a college.,Lost & Found,High,9,19,2,0,109,,label corrected based on content and priority corrected,1,0
+The interview process was so vague and misleading that I didn’t realize it was a scam until I was already trapped in it.,Placement & Career Services,High,10,23,2,0,120,,,0,0
+Lab safety rules are not followed strictly.,Safety & Security,Medium,12,7,1,0,43,,,0,0
+"I made the payment for my original pass certificate through internet banking, the money got deducted, but the receipt is not available for download and the amount has not been refunded either.",IT & Digital Services,High,6,32,2,0,192,,,0,0
+"Every time I go to the office, the concerned person is either unavailable or on leave.",Lost & Found,Low,9,16,0,0,86,,label corrected based on content,1,0
+"People were using silent floors, quiet areas, and even carrels like hangout spaces, bringing in groups, laughing, gossiping, and taking over study areas that were supposed to stay quiet.",Library,High,8,29,2,0,186,,,0,0
+"The Wi-Fi requires frequent login or authentication, which interrupts work when students are trying to focus.",IT & Digital Services,Medium,6,16,1,0,109,,,0,0
+"i misse dclasses due to official extracurricular covmitments, but no consideration was given.",Attendance,Medium,0,13,1,0,93,,,0,0
+Affiliation letter not issued to alumni even after 3 months fo appplication,Certificate & Records,High,1,12,2,0,75,,,0,0
+"I was told I was interviewing for an office or marketing role, but they pushed me into field sales instead.",Placement & Career Services,High,10,20,2,0,107,,,0,0
+College demanding money/fine (₹5000 or full course fee) to return certificates,Certificate & Records,High,1,11,2,0,78,,,0,0
+"Transport is not good, but we don’t have another option.",Transportation,Low,13,10,0,0,56,,,0,0
+"Some bus drivers just come across as moody or unpleasant, and that makes the ride feel more uncomfortable than it needs to be.",Transportation,Low,13,23,0,0,126,,,0,0
+We are not guided properly on improving soft skills for interviews.,Placement & Career Services,Low,10,11,0,0,67,,,0,0
+concern that overal course structure made ih hard to recovur from early mistakes,Examination,Medium,3,13,1,0,80,,,0,0
+"“For the first few days, there were intro-type tasks just so seniors could show their dominance.”",Ragging & Harassment,Low,11,16,0,0,97,,,0,0
+"It gets annoying when someone yells or makes comments while passing, especially when you’re just riding normally.",Transportation,Low,13,17,0,0,113,,internet access loss affects academics,1,0
+I would feel better if staff were a bit more visible in hallways and shared spaces.,Safety & Security,Low,12,16,0,0,83,,,0,0
+Everywhere inside campus we have to pay for something.,Fees,Low,5,9,0,0,54,,,0,0
+"In some regions, the transport system is not as well organized as in other states, which makes travel inconvenient.",Transportation,Medium,13,19,1,0,115,,,0,0
+"Honestly, running around trying to figure out what to do is exhausting when this shouldn’t even be our problem.",Fees,Medium,5,19,1,0,111,,,0,0
+the AC sometimes stops working properly and it becomes uncomfortable to sit for long hours,Infrastructure,Medium,7,15,1,0,90,,,0,0
+Claim that unclear ruarics led to inconsistent evaluation of similar wokr,Examination,Medium,3,11,1,0,73,,outdated content issue and priority corrected and priority corrected,1,0
+students said terminology was too siilar and confusing,Examination,Low,3,8,0,0,54,,,0,0
+"Wireless dongles for desktops add another point of failure and are easier to lose, damage, or misconfigure than built-in or wired networking.",IT & Digital Services,Low,6,22,0,0,141,,,0,0
+studenst need constant guidance for simple tasks,Discipline,Low,2,7,0,0,48,,,0,0
+"Some teachers are marking students absent if their home environment is not quiet enough, even though students cannot always control noise at home.",IT & Digital Services,Medium,6,23,1,0,146,,,0,0
+She calls in at the last minute instead of informing earlier.,Attendance,Medium,0,11,1,0,61,,last minute scheduling inconvenience not severe and priority corrected and priority corrected,1,0
+Repaets questions instead of explaining,Faculty,Low,4,5,0,0,39,,,0,0
+There are multiple reports and news cases of schools installing CCTV cameras in boys’ toilets.,Safety & Security,High,12,15,2,0,94,,,0,0
+My attendance issue is not being resolved and deadlines for exam eligibility are approaching.,Attendance,High,0,14,2,0,93,,,0,0
+There are not enough staff members during dismissal to ensure smooth and safe movement of students.,Safety & Security,Medium,12,16,1,0,99,,,0,0
+"Religious pamphlets and mini Bibles are being left around the library like litter, and staff have to keep cleaning them up.",Library,High,8,21,2,0,123,,,0,0
+Enforcement differences between male and female staff create uneven apflication of rules,Discipline,Medium,2,12,1,0,88,,,0,0
+my attendance dropped towards the end of the semester due to lack of mootivation.,Attendance,Low,0,14,0,0,81,,,0,0
+we had an OA today ... a lot of us solved the problems in the time frame and correctly however the people who got shortlisted told that they didn't solve some qs,Placement & Career Services,High,10,32,2,0,161,,,0,0
+Some people don’t explore beyond the first floor and assume there’s no space available.,Library,Low,8,14,0,0,87,,,0,0
+plagiarism and cheatig cases not acted upon equally,Examination,High,3,8,2,0,51,,,0,0
+we had to pay 500/- and 1000/- for one and two offers respectively,Placement & Career Services,Medium,10,13,1,0,66,,usability issue moderate and priority corrected and priority corrected,1,0
+I just wish they were more clear and upfront about fees instead of making everything so complicated and unclear.,Fees,Low,5,19,0,0,112,,,0,0
+Some passengers feel that authorities care more about rules than actual passenger comfort.,Transportation,Low,13,13,0,0,90,,,0,0
+Students prioritizing phones over classwork tnd resisting restrictions,Discipline,Medium,2,8,1,0,70,,,0,0
+Students feel helpless because even raising issues through official channels requires revealing identity.,Infrastructure,Low,7,13,0,0,105,,label corrected based on content and priority corrected,1,0
+"dress code enforcement can reinforce misogynistic atittudes, especially when foocuseed on covering efmale bodies",Discipline,High,2,14,2,0,112,,,0,0
+administrative delays nd back-and-forth with college authorities,Certificate & Records,Medium,1,7,1,0,64,,,0,0
+institutions placing burden of verification on faculty without proepr support systems,Certificate & Records,Medium,1,11,1,0,85,,label corrected based on content and priority corrected,1,0
+Belie that consistent participation or attendance should slightly improve the fixal grade...,Examination,Low,3,12,0,0,92,,,0,0
+Some students feel that cameras do not make a noticeable difference in day-to-day campus safety.,Safety & Security,Low,12,15,0,0,96,,,0,0
+She occasionazly requests flex time for personal reasons.,Attendance,Low,0,8,0,0,57,,,0,0
+I feel like they should atleast send proper reminders instead of sudden updates.,Fees,Low,5,13,0,0,80,,,0,0
+Degree certificate hid not havp issue date printed,Certificate & Records,Low,1,8,0,0,50,,,0,0
+“not responding to emails when they don’t want to do what you’re asking.”,Faculty,Medium,4,13,1,0,73,,,0,0
+insstructor creates unnecessarily difficult assessments not aligned with tamght material,Faculty,Medium,4,10,1,0,88,,,0,0
+"Some book series are incomplete, so it becomes impossible to read them in the correct order without a lot of hassle.",Library,Medium,8,21,1,0,116,,,0,0
+"Minor enforcement actions (e.g., asking students to tuck in shirts or adjust clothing) can become repetitive annoyances",Discipline,Low,2,17,0,0,119,,,0,0
+the college declared official holiray for those days but the erp system still marked it as bsent.,Attendance,Medium,0,17,1,0,97,,,0,0
+talks exccessiveyl about personal experiences unrelated to course,Faculty,Low,4,8,0,0,65,,,0,0
+Drivers can be really rude when you ask why the bus is late.,Transportation,High,13,13,2,0,60,,,0,0
+Even basic fee receipts are not given properly which is irritating.,Fees,Low,5,11,0,0,67,,,0,0
+"I expected the college to support students, but instead it feels like they are creating unnecessary obstacles.",Lost & Found,Medium,9,17,1,0,110,,,0,0
+"“Wen they do, there is no feedback on what you did wrong.”",Faculty,Medium,4,12,1,0,58,,,0,0
+we were forced to register for it and not for asked for consent,Placement & Career Services,High,10,13,2,0,63,,,0,0
+Students feeling institutions protect staff over investigating legitimate grievanceg,Discipline,High,2,9,2,0,84,,,0,0
+It’s confusing that some areas have strict checking while others have zero monitoring,Lost & Found,Medium,9,13,1,0,85,,,0,0
+"Students have to walk all the way from upper floors to ground floor just to collect water cans, which is exhausting and not practical.",Infrastructure,High,7,24,2,0,134,,noise issue moderate and priority corrected and priority corrected,1,0
+"My phone was traceable for a while, but because the thief kept moving, there was no practical way to recover it in time.",Lost & Found,High,9,23,2,0,120,,,0,0
+I feel that general safety awareness among students could be improved.,Safety & Security,Low,12,11,0,0,70,,,0,0
+The school didn’t provide any proper tracking or inventory of my belongings.,Lost & Found,Medium,9,12,1,0,76,,,0,0
+Students benefiting unfairly from govenrment schemes using forged documents so frustrated,Certificate & Records,Medium,1,11,1,0,89,,,0,0
+students scoring higher through cheating and then boasting about it,Examination,High,3,10,2,0,67,,,0,0
+It’s honestly unfair that education institutions are treating students like this over fees instead of showing basic understanding.,Fees,High,5,18,2,0,130,,,0,0
+I missed a class due to oversleeping once and it negatively impacted my attendance percentage,Attendance,Low,0,15,0,0,93,,,0,0
+My bike was stolen from outside my PG and the police didn’t seem serious about the complaint at all.,Lost & Found,High,9,19,2,0,100,,,0,0
+"Sometimes we depend on friends to understand fee details, which shouldn’t really be necessary.",Fees,Low,5,14,0,0,94,,,0,0
+some professors use attendance s a control tool rather than actual tracking.,Attendance,Medium,0,12,1,0,76,,,0,0
+"A lot of students, including me, are confused about what even counts as a real internship.",Placement & Career Services,Low,10,16,0,0,90,,,0,0
+"The placement rules are not always explained clearly, but students are still expected to face the consequences.",Placement & Career Services,Medium,10,17,1,0,111,,,0,0
+"“Teachers used to treat rich or popular students better, while others were ignored or insulted.”",Ragging & Harassment,Medium,11,15,1,0,96,,,0,0
+"""My attenddance record has errors htat are not being fixed."" idk what to do",Attendance,Medium,0,14,1,0,75,,,0,0
+These little booklets keep showing up around the library and they are more annoying than useful.,Library,Low,8,16,0,0,96,,,0,0
+threatening or intimidating student for asking queestions,Faculty,High,4,7,2,0,57,,,0,0
+The extra year requirement is not justified academically but still increases financial burden.,Fees,Medium,5,13,1,0,94,,transport frequency moderate issue and priority corrected and priority corrected,1,0
+Academic bmllying or intimidation by faculty,Faculty,High,4,6,2,0,44,,,0,0
+I would feel more comfortable if there were a few more staff members visible during less busy hours too.,Safety & Security,Low,12,19,0,0,104,,,0,0
+Just because a car feels more familiar doesn’t automatically mean it’s a better experience.,Transportation,Low,13,14,0,0,91,,,0,0
+"College retaining origianl 10th, 12th markheets and certificates indefinitely",Certificate & Records,High,1,9,2,0,77,,,0,0
+There is no visible emergency response team for handling urgent situations quickly.,Safety & Security,Medium,12,12,1,0,83,,,0,0
+No explanation. No steps shown whatsoever. Nothing.,Faculty,Low,4,7,0,0,51,,,0,0
+Need to wait several months to regeive replacement certificates from boards,Certificate & Records,Medium,1,11,1,0,75,,,0,0
+loss of time between classes due to dress code checks or corrections,Discipline,Low,2,12,0,0,68,,grading structure belongs to faculty,1,0
+Passengers feel frustrated when buses do not arrive exactly on time.,Transportation,Low,13,11,0,0,68,,,0,0
+"My name was called out in class for not paying fees, which made me feel uncomfortable in front of classmates.",Fees,Medium,5,20,1,0,109,,,0,0
+i informed the faculty about my absence but it was still marked aas unexcused.,Attendance,Medium,0,14,1,0,78,,,0,0
+"There have been attempted kidnappings and rape incidents connected to campus surroundings, which is extremely alarming.",Safety & Security,High,12,16,2,0,119,,,0,0
+lack of exgm preparation matarians or study guides,Examination,Medium,3,8,1,0,50,,,0,0
+"The move to online learning made inequality in digital access more visible, but the response has been slow.",IT & Digital Services,Low,6,18,0,0,107,,,0,0
+Students should not be able to physically assault staff without immediate and visible consequences.,Safety & Security,High,12,14,2,0,99,,,0,0
+"Trying to manage relationships, conflicts, and emotional issues among students on the bus can become surprisingly draining for drivers.",Transportation,Medium,13,19,1,0,135,,,0,0
+"The portal stopped working right when I was about to take an exam, and now I am worried that I might miss my scheduled attempt even though I was fully prepared.",IT & Digital Services,Medium,6,31,1,0,160,,label corrected based on content and priority corrected,1,0
+Public transport takes far too long. A trip that would take me a few minutes by car can easily take a couple of hours by bus or other public transport.,Transportation,High,13,30,2,0,151,,,0,0
+Students feel unfairly single out when others violating the same rules are ignored in the same nevironment,Discipline,High,2,17,2,0,106,,label corrected based on content and priority corrected,1,0
+Administration punished a student for calling 911 during a life-threatening situation.,Safety & Security,High,12,11,2,0,86,,,0,0
+Dely in returning documents after verification process,Certificate & Records,Medium,1,7,1,0,54,,,0,0
+Refuses to reconsider proven evidence,Faculty,High,4,5,2,0,37,,,0,0
+"Reserved seating for women, elderly people, and physically challenged passengers is not respected properly unless someone argues for it, which creates unnecessary conflict.",Transportation,Medium,13,23,1,0,172,,label corrected based on content and priority corrected,1,0
+"The campus Wi-Fi works, but it randomly slows down for no reason, especially during peak hours. It’s not unusable, just annoying.",Infrastructure,High,7,21,2,0,129,,system capacity issue moderate and priority corrected and priority corrected,1,0
+"As a fresher, it’s really hard to understand the difference between training, certification programs, and real internships.",Placement & Career Services,Low,10,17,0,0,123,,,0,0
+"IT staff may be working on the issue, but students still suffer because the problem takes too long to resolve.",IT & Digital Services,Medium,6,20,1,0,110,,fine issue moderate financial stress,1,0
+heav yexam weight causing stress and grade imbalance,Examination,Medium,3,8,1,0,52,,exam time issue moderate and priority corrected and priority corrected,1,0
+"The portal outage is directly affecting scheduled exams and assessments, leaving students unable to start or complete important academic work on time.",IT & Digital Services,High,6,22,2,0,150,,,0,0
+The placement process feels rigid because students are punished for being selective about their applications.,Placement & Career Services,Medium,10,15,1,0,109,,,0,0
+Professors revealing student grdds publicly (privacy violation),Discipline,Medium,2,7,1,0,63,,label corrected based on content and priority corrected,1,0
+A little more attention to everyday supervision would make the school feel more secure overall.,Safety & Security,Low,12,15,0,0,95,,,0,0
+"Instead of helping him, the staff called security and had him escorted out of the library, which felt unnecessary and humiliating.",Library,High,8,21,2,0,130,,,0,0
+"The campus internet blocks or restricts some useful websites, which makes it harder to access study resources.",IT & Digital Services,Medium,6,17,1,0,110,,fine related issue belongs to fees and priority corrected and priority corrected,1,0
+Professor gives inconsistent but non-malicious guidance about course expectations,Faculty,Low,4,9,0,0,81,,,0,0
+Faculty humiliates students subtly through sarcasm or dismissive comments in class,Faculty,Medium,4,11,1,0,82,,,0,0
+“College prioritizes money over students”,Infrastructure,High,7,5,2,0,41,,,0,0
+feeling exams don’t refllect actual understakding,Examination,Low,3,6,0,0,49,,,0,0
+"Some library branches have a lot more difficult situations than others, and the workload becomes overwhelming in those locations.",Library,Medium,8,19,1,0,129,,,0,0
+"Even when you try to drive calmly, traffic chaos makes it hard to stay comfortable. You always feel tense because anything can happen.",Transportation,Medium,13,23,1,0,134,,,0,0
+I feel like theft awareness is not taken seriously by the college at all,Lost & Found,Low,9,14,0,0,72,,,0,0
+“tell you you're wrong and not appreciating students”,Faculty,Low,4,8,0,0,53,,,0,0
+I missed internal exams because of low attendance and now my overall result is affected.,Attendance,High,0,15,2,0,88,,,0,0
+I get anxious when my attendance drops slightly.,Attendance,Low,0,8,0,0,48,,,0,0
+“Didn’t learn a damn thing.”,Faculty,High,4,5,2,0,28,,,0,0
+College mandating submission of original documents through coercive forms or policies,Certificate & Records,High,1,11,2,0,85,,,0,0
+Finding free or affordable study materials online isn’t always easy.,Library,Low,8,10,0,0,68,,,0,0
+There are increasing unfair practices happening during online assessments.,Placement & Career Services,Medium,10,9,1,0,74,,,0,0
+"The auto drivers sometimes take longer routes, which makes the trip annoying.",Transportation,Low,13,12,0,0,77,,,0,0
+No clear authority responsible for ussuing transcripts pls help,Certificate & Records,Low,1,9,0,0,63,,,0,0
+"My water bottle was taken and later returned without informing me, which made me uncomfortable.",Lost & Found,Low,9,15,0,0,95,,label corrected based on content,1,0
+"Some students cannot even sit for placements because of year backs, backlogs, or percentage rules, which adds more pressure.",Placement & Career Services,Medium,10,19,1,0,124,,repeated issue moderate impact and priority corrected and priority corrected,1,0
+"Poor internet connectivity is directly affecting academic performance, especially for courses that require constant online access.",IT & Digital Services,High,6,16,2,0,130,,,0,0
+I think the school could do a better job of making everyday safety measures more noticeable.,Safety & Security,Low,12,16,0,0,92,,,0,0
+nnot gxplainnig assignments properly but expecting completion,Faculty,Low,4,7,0,0,61,,,0,0
+"It got so bad that some students felt the library needed stricter enforcement, including kicking people out or banning repeat offenders, because normal reminders were clearly not enough.",Library,High,8,28,2,0,186,,,0,0
+studeets stated majority of class remained until end due to difficulty!!!!,Examination,High,3,11,2,0,74,,,0,0
+my attendance was incorrectly marked for multiple classes.,Attendance,Medium,0,8,1,0,58,,,0,0
+Some teachers cleir attendance ffor everyone regardless of pressence.,Attendance,Medium,0,9,1,0,69,,,0,0
+"Because there are too many private bus operators, the routes and timings are not properly coordinated, which makes traveling confusing and inefficient.",Transportation,High,13,22,2,0,151,,,0,0
+students do not maintaan persoal discipline in studies,Discipline,Low,2,8,0,0,54,,,0,0
+lecture by reading the same sections verbatim in a monotone.,Faculty,Low,4,10,0,0,60,,,0,0
+"Some bus drivers are unnecessarily rude and negative, especially toward passengers they think will not push back. That kind of attitude makes the whole journey stressful.",Transportation,High,13,26,2,0,170,,,0,0
+"People started spreading gossip about me after the accusations, and that turned into bullying and taunting from classmates. Even the people I thought were my friends started speaking badly about me.",Ragging & Harassment,Medium,11,31,1,0,198,,,0,0
+i attended very few classes but still managed academically.,Attendance,Low,0,9,0,0,59,,,0,0
+"There’s uncertainty about hostel accommodation, with fears of overcrowding like converting 5-sharing rooms into 6 or more.",Infrastructure,Medium,7,17,1,0,122,,,0,0
+"The environment feels generally safe, but not as actively managed as it could be.",Safety & Security,Low,12,14,0,0,81,,,0,0
+"Teachers are being put in situations where they could be stabbed, seriously beaten, or falsely accused while trying to intervene.",Safety & Security,High,12,20,2,0,129,,,0,0
+The response from security after reporting theft is extremely slow and ineffective.,Lost & Found,High,9,12,2,0,83,,priority corrected based on severity,1,0
+Even for small fee doubts we are told to come later which is honestly irritating.,Fees,Low,5,15,0,0,81,,,0,0
+"The college is pressuring students to submit original documents and threatening cancellation of admission, which creates fear and insecurity among students.",Safety & Security,Medium,12,21,1,0,156,,label corrected based on content and priority corrected,1,0
+Students being ddrawn into lengthy conduct processes druing critical academiu periods (finals),Discipline,High,2,12,2,0,94,,,0,0
+If my attendance drops further I will not be allowed to appear for the exam.,Attendance,High,0,15,2,0,76,,,0,0
+Even after reporting theft there are no updates given to students,Lost & Found,Medium,9,11,1,0,65,,,0,0
+"I tried to do the right thing and report the reimbursement mistake, but the finance office handled it so carelessly that the whole situation became confusing and stressful",Fees,Medium,5,28,1,0,171,,,0,0
+"The campus may be safe, but once you step outside it, the surrounding area feels much less secure.",Safety & Security,Medium,12,18,1,0,98,,,0,0
+"Minor resnetment toward specific items beign banned (e.g., overalls, logos)",Discipline,Low,2,10,0,0,75,,,0,0
+Students are figuring out small workarounds like using spoons just to avoid washing hands frequently.,Infrastructure,Low,7,15,0,0,101,,,0,0
+It feels frustrating when the available campus roles do not align with what students actually prepared for.,Placement & Career Services,Low,10,17,0,0,107,,,0,0
+students expected hints or cues similar to class examples,Examination,Low,3,9,0,0,57,,,0,0
+The placement process prioritizes companies more than student welfare.,Placement & Career Services,High,10,9,2,0,70,,,0,0
+The camera blind spot near the staircase basically made that area unsafe for students’ belongings.,Lost & Found,Medium,9,15,1,0,98,,priority corrected based on severity,1,0
+stuents disrupting entrbe class leaarning with no intervention from leadership,Discipline,High,2,10,2,0,78,,,0,0
+"I am filing this complaint because students were physically punished for things beyond their control, like transport delays, dress code issues, or even handwriting. Teachers treated minor mistakes as if children had committed crimes. This level of aggression toward young students is abusive and unacceptable.",Ragging & Harassment,High,11,45,2,0,309,,,0,0
+"Honestly, fee handling should be much smoother than this but it’s unnecessarily complicated.",Fees,Medium,5,13,1,0,92,,,0,0
+Students feel that portal issues are so common that they have become routine instead of exceptional.,IT & Digital Services,Low,6,16,0,0,100,,,0,0
+Incidents like this make you feel like you always have to be extra careful on campus.,Lost & Found,Low,9,16,0,0,85,,,0,0
+"Some buses do not stop properly at the roadside, and passengers are expected to get down in unsafe conditions, sometimes directly into traffic. That feels dangerous.",Transportation,High,13,26,2,0,165,,,0,0
+other students’ education being severeely impacted by a few disruptive students,Discipline,High,2,11,2,0,79,,,0,0
+"The quiet floors still overlook noisy areas, so even when I find a seat, the setup is distracting.",Library,Low,8,18,0,0,98,,,0,0
+students perceiving strict grading on technicalities as unnecessary,Examination,Low,3,8,0,0,67,,,0,0
+said 'i feel sorry for your wife to students and not treating them as students',Faculty,High,4,15,2,0,79,,,0,0
+"I’ve noticed that a lot of students just add projects to their resume that are directly copied or forked from training institutes, which doesn’t really reflect their own work.",Placement & Career Services,Low,10,29,0,0,175,,,0,0
+I feel like we have to ask multiple people just to understand one small fee-related doubt. It shouldn’t be this confusing honestly.,Fees,Low,5,22,0,0,131,,,0,0
+"Unsafe school environments are causing fear, anxiety, and emotional exhaustion among teachers.",Safety & Security,High,12,12,2,0,94,,,0,0
+I want to mention that many students still remember punishments from years ago because they were humiliating. Even small incidents can stay in memory for a long time.,Ragging & Harassment,Low,11,28,0,0,166,,,0,0
+"Sometimes the projector works, but the display is not very clear.",Infrastructure,Low,7,11,0,0,65,,,0,0
+"Libraries are being used as a platform to push one religion on everyone else, which makes the space feel less neutral and welcoming.",Library,High,8,23,2,0,132,,,0,0
+"There is not enough investment in better systems like rail, which could move more people efficiently.",Transportation,Medium,13,16,1,0,101,,,0,0
+university not responding to emails regarding answer sheet mopies,Certificate & Records,High,1,9,2,0,65,,no response on answer sheets affects academics and priority corrected and priority corrected,1,0
+Even basic fee status is not shown clearly which creates unnecessary confusion.,Fees,Low,5,12,0,0,79,,,0,0
+"“They called it tradition, but it still made juniors uncomfortable.”",Ragging & Harassment,Low,11,10,0,0,68,,,0,0
+"Some libraries don’t have regular non-academic books, which makes it boring during breaks between classes.",Library,Low,8,15,0,0,106,,,0,0
+delayed response from universities when duplicate certificate requests are raised,Certificate & Records,Medium,1,10,1,0,81,,,0,0
+Inseructor publicly hmiliates students or singles them out aggressively,Faculty,High,4,9,2,0,71,,,0,0
+Complainign about not being allowed unsafe actions,Discipline,Low,2,7,0,0,50,,,0,0
+theae are students who consistently skip classes and perfrm poorly but sitll question their grades,Attendance,High,0,15,2,0,98,,,0,0
+"The desks in certain classrooms are extremely small, and it becomes difficult to keep notebooks, papers, and other materials properly while writing.",Infrastructure,Medium,7,22,1,0,148,,,0,0
+Some students with very weak technical skills still get high-paying jobs through cheating or unfair advantages.,Placement & Career Services,High,10,16,2,0,111,,,0,0
+Parents and relatives have been able to bypass the office and appear directly at classroom doors without warning.,Safety & Security,Medium,12,18,1,0,113,,,0,0
+"The institution charges high fees, but basic digital infrastructure like Wi-Fi is not working properly, which feels very unfair to students.",IT & Digital Services,High,6,21,2,0,140,,,0,0
+It feels like the desks were designed just to fit more students in the room rather than for comfort.,Infrastructure,Low,7,19,0,0,100,,,0,0
+"understaffing limiting ability to enforce consequences (e.g., detention) idk what to do",Discipline,Medium,2,12,1,0,87,,,0,0
+she clearly told me seh would make sure i wasn’t allowed to write the semester exam because of my attendance.,Attendance,High,0,20,2,0,109,,,0,0
+“I was singled out by the senior-most student in the college.”,Ragging & Harassment,Medium,11,11,1,0,62,,,0,0
+Its annoying how long it takes just to get simple fee clarification.,Fees,Low,5,12,0,0,68,,,0,0
+Most parents probably don’t even notice this until much later.,Infrastructure,Medium,7,10,1,0,62,,infrastructure outdated but not severe and priority corrected and priority corrected,1,0
+exam conflicts not accommodated fairly leading to missed attempts!!!!,Examination,High,3,9,2,0,69,,,0,0
+The library made the situation very stressful even though it could have been solved easily.,Library,High,8,15,2,0,91,,,0,0
+"Dealing with so many different kinds of people every day can be emotionally draining, especially when many of them are already stressed or upset.",Library,Medium,8,24,1,0,145,,,0,0
+attendance issues have been ongoing for months without improvemet.,Attendance,High,0,9,2,0,66,,,0,0
+"I built up the courage to apply for masters after years of my parents discouraging me, got into a few colleges, and then they just let the last date pass without paying. My mom had literally told me she'd handle it. I've been depressed for two months straight because of this.",Fees,High,5,51,2,0,276,,,0,0
+I had to stop bringing my expensive devices because I don’t trust campus security anymore,Lost & Found,Medium,9,15,1,0,89,,,0,0
+Students not held accountable; teachers blamed instead,Discipline,Medium,2,7,1,0,54,,label corrected based on content and priority corrected,1,0
+"Sometimes the site works on one device but not on another, which makes the experience feel inconsistent.",IT & Digital Services,Low,6,17,0,0,104,,,0,0
+“Canceling class without an explanution” (if occasional) rly urgent,Faculty,Low,4,9,0,0,67,,,0,0
+"Repeated violence is being brushed aside instead of being handled with strong action, which puts both staff and students at risk.",Safety & Security,High,12,21,2,0,129,,,0,0
+"The corridors get a bit dusty by the end of the day. Cleaning happens, but not frequently enough.",Infrastructure,High,7,18,2,0,97,,confusion minor inconvenience and priority corrected and priority corrected,1,0
+"Online attendance systems are creating a situation where students may face punishment for poverty, poor service, or technical limitations at home.",IT & Digital Services,High,6,21,2,0,146,,,0,0
+"A guy liked me but became too obsessive, and the way he acted made me feel very uncomfortable. It stopped feeling harmless and started feeling like harassment.",Ragging & Harassment,Medium,11,27,1,0,159,,,0,0
+Students blaming teachers for their ownn academic failures,Discipline,Medium,2,8,1,0,58,,,0,0
+"It was tiring having to remind grown adults again and again not to talk loudly, not to bring in food, and not to leave rubbish behind. That kind of repeated disrespect wears you down.",Library,Medium,8,34,1,0,183,,,0,0
+"I am raising concern about the silence around these incidents. Students were often afraid to complain because they believed nobody would support them, or that complaining would only make things worse. This fear allowed harassment and ragging-like behavior to continue unchallenged.",Ragging & Harassment,Low,11,41,0,0,281,,furniture limitation minor inconvenience and priority corrected and priority corrected,1,0
+lack of clarity on whether documents were genuieely issued or not...,Certificate & Records,Low,1,11,0,0,68,,,0,0
+I had to constantly worry about my laptop getting stolen in hostel instead of focusing on studies,Lost & Found,Medium,9,17,1,0,97,,delay in resolution moderate issue and priority corrected and priority corrected,1,0
+students expecting leniency for small citation or formatting errors,Examination,Low,3,9,0,0,67,,,0,0
+students lying or denying cheating even when evidence is strong,Examination,High,3,10,2,0,63,,,0,0
+Internship processes sometimes feel more like formalities required for degree completion rather than real learning experiences.,Placement & Career Services,Medium,10,16,1,0,127,,,0,0
+studeents arguing oter fairness of consequences despite warnings,Discipline,Medium,2,8,1,0,64,,,0,0
+"Public libraries in India are not as good as the ones in some other countries, so it feels like something is missing.",Library,Low,8,22,0,0,117,,,0,0
+students struggling to locate or follow exam-related instructions,Examination,Medium,3,8,1,0,65,,,0,0
+“I was made to do sit-ups in front of everyone over a very small mistake.”,Ragging & Harassment,Medium,11,15,1,0,74,,,0,0
+Studens needing to repeatedly visit college to request documents,Certificate & Records,Medium,1,9,1,0,64,,,0,0
+"People say campus theft is low, but when it comes to expensive electronics students still have real reasons to worry about losing their stuff",Lost & Found,Low,9,24,0,0,141,,,0,0
+Some common areas feel a little too loosely supervised during regular hours.,Safety & Security,Low,12,12,0,0,76,,,0,0
+"Even after reporting the theft, the security team did not take proper action, which is very disappointing.",Lost & Found,High,9,17,2,0,106,,,0,0
+"I worked with the public before, so helping people in the library is not the hard part, but it does get tiring when you keep repeating the same basic things again and again and never get to do anything beyond that.",Library,Low,8,41,0,0,214,,,0,0
+The teacher started beating me without even asking properly what happened. He kept slapping me even when I begged him and said it was not me.,Ragging & Harassment,High,11,26,2,0,141,,,0,0
+It feels like the school is focusing more on appearances than essential facilities.,Infrastructure,High,7,13,2,0,83,,label corrected based on content and priority corrected,1,0
+"Students threatening teachers with police complaints over minor discipline (e.g., bus lateness)",Discipline,High,2,12,2,0,95,,,0,0
+"The pathway between blocks is not well-lit, which makes it slightly uncomfortable to walk alone.",Safety & Security,Medium,12,15,1,0,96,,,0,0
+"On exam days, he would walk around the classroom giving 'hint's or outright answers",Faculty,Low,4,14,0,0,83,,,0,0
+students said they didnn’t know how to approach problem-solving questions,Examination,Medium,3,10,1,0,73,,,0,0
+"We paid full hostel and college fees, and they’re still shutting off essential services during the day. This doesn’t feel right at all.",Infrastructure,Medium,7,23,1,0,135,,,0,0
+Repeated portal issues make students feel like they have to build backup study plans around system instability.,IT & Digital Services,Low,6,17,0,0,111,,rule enforcement moderate and priority corrected and priority corrected,1,0
+CCTV was not working in that area so there is no footage and no way to find who did it,Lost & Found,High,9,20,2,0,86,,,0,0
+Early morning classes have noticeably lower attendance compared to later sessions,Attendance,Medium,0,11,1,0,81,,,0,0
+The placement department is not allowing students to attend other interviews after one selection.,Placement & Career Services,High,10,14,2,0,97,,,0,0
+I feel guilty missing claasses due to illness even whne it is unavoidable.,Attendance,Low,0,13,0,0,74,,,0,0
+"The campus lacks proper lighting in a few internal areas, making them uncomfortable to use.",Safety & Security,Medium,12,15,1,0,91,,,0,0
+"Some people reject buses or trains without giving them a fair chance, and then act like the whole system is useless.",Transportation,Low,13,21,0,0,116,,,0,0
+overcrowding leading to students literally not having space to sit,Infrastructure,High,7,10,2,0,66,,,0,0
+Students can feel demotivated when their college placements do not reflect their effort or expectations.,Placement & Career Services,Low,10,15,0,0,104,,,0,0
+Possible institutional negligence in verifying legitimacy of enrollments and issued degrees,Certificate & Records,Low,1,11,0,0,91,,,0,0
+Sam sometimes adjusts their schedule based on personal needs.,Attendance,Low,0,9,0,0,61,,,0,0
+I am unsure whether the certifmcate format I prepared will be accepted at the SSB centre,Certificate & Records,Low,1,16,0,0,88,,,0,0
+"Even after reporting the mistake to the board, the lack of response makes students feel that serious digital record errors are not being handled urgently.",IT & Digital Services,High,6,25,2,0,154,,,0,0
+No audit trail available for admission or certification process,Certificate & Records,Low,1,9,0,0,63,,,0,0
+"Public transport timings are so limited in some places that you simply cannot rely on it for work, school, shopping, or basic daily life unless your whole schedule matches the bus timetable.",Transportation,High,13,32,2,0,190,,,0,0
+we did’t know there wav an assignment until we were told it was due.,Faculty,Medium,4,14,1,0,68,,,0,0
+"Some passengers refuse to show basic manners, which leads to arguments.",Transportation,Medium,13,11,1,0,71,,,0,0
+Providing unhelpful responses instead of suggsting alternative solutions so frustrated,Discipline,Low,2,10,0,0,86,,handling urgency issue by faculty,1,0
+"The portal occasionally takes a long time to open the dashboard, even when my internet connection is working fine.",IT & Digital Services,Low,6,19,0,0,114,,,0,0
+"Being told to introduce myself in a particular language and in a very controlled way did not feel friendly, it felt like I was being tested under pressure.",Ragging & Harassment,Low,11,28,0,0,155,,,0,0
+"Even when a space is marked as a quiet area, the rules are often not followed properly, which makes the label feel meaningless.",Library,Low,8,23,0,0,127,,,0,0
+feeeling unprepared despite attending classes,Examination,Low,3,5,0,0,45,,,0,0
+sometimes the staff takes a little time to issue books but it’s not a big problem overall,Infrastructure,Low,7,17,0,0,89,,,0,0
+"In some cases buses are so overloaded that passengers cannot move at all, and this feels unsafe during travel.",Transportation,High,13,19,2,0,110,,,0,0
+"Some items are probably turned in, but the bigger problem is not knowing where to look for them.",Lost & Found,Low,9,18,0,0,96,,,0,0
+"Theft cases are not being investigated seriously, and students are left helpless.",Lost & Found,High,9,12,2,0,81,,,0,0
+"Even when you leave early, you still can’t trust that the bus will come.",Transportation,Medium,13,14,1,0,72,,,0,0
+It can be confusing when different companies expect completely different things from interns.,Placement & Career Services,Low,10,13,0,0,93,,,0,0
+idk why they don’t just install proper CCTV cameras everywhere when theft is clearly happening,Lost & Found,Low,9,15,0,0,94,,,0,0
+"Some parts of the system may work while other parts remain broken, such as the homepage loading but assessments or textbooks still failing.",IT & Digital Services,Medium,6,23,1,0,139,,,0,0
+Confusion due to sudden rule implementation,Discipline,Low,2,6,0,0,43,,,0,0
+stodents show open defiance and hostility towards teachers,Discipline,Medium,2,8,1,0,58,,,0,0
+"The student has already reported the incorrect CGPA by email, but there has been no response, which makes the issue more stressful and urgent.",IT & Digital Services,High,6,24,2,0,142,,,0,0
+teachers refusing to provide feeedback before final assessments...,Examination,Medium,3,8,1,0,66,,,0,0
+"The library refused to give my certificate until I cleared the fine, even though the delay happened during unusual circumstances.",Library,High,8,20,2,0,129,,,0,0
+idk why there are still no cameras in areas where theft keeps happening,Lost & Found,Low,9,13,0,0,71,,,0,0
+“My cousin brother went deaf in one ear after a senior punched him because he refused to slap his best friend and batchmate.”,Ragging & Harassment,High,11,23,2,0,125,,,0,0
+Incopmlete or ccropped evidencee used in disciplinary investigation,Discipline,High,2,8,2,0,67,,,0,0
+eam malpractice incidents spreading widely among peers causing reputational damage,Examination,High,3,10,2,0,82,,,0,0
+Instructr provides unclear or ontradictory course materialn compared to eaxms,Faculty,Medium,4,10,1,0,77,,,0,0
+Delay n returning documents even after filing complaints to authorities,Certificate & Records,High,1,10,2,0,71,,document delay even after complaint is serious and priority corrected and priority corrected,1,0
+My handbag with original ID documents and important papers was stolen in broad daylight from my car.,Lost & Found,High,9,17,2,0,100,,,0,0
+Students being rude or dismissive toward teacher effort,Discipline,Medium,2,8,1,0,55,,,0,0
+student sexpecting exceptions without formal accmmodation proceduers,Examination,Medium,3,7,1,0,68,,complaint about syllabus expectation and priority corrected and priority corrected,1,0
+"I want to raise a serious complaint about the emotional and physical abuse faced by students who were academically weak or simply unable to meet unrealistic expectations. Some teachers repeatedly beat such students, insulted them, made them sit on the floor, and humiliated them in front of others. This treatment did not help anyone improve — it only caused shame, fear, and long-term damage to self-esteem.",Ragging & Harassment,High,11,66,2,0,408,,,0,0
+assiignments reuiring knowledge nt taught in class!!!!,Faculty,Medium,4,7,1,0,54,,,0,0
+She is often just a few minutes late to work.,Attendance,Low,0,10,0,0,45,,,0,0
+students using prior reputation (“good student”) to avoid consequences pls help,Examination,High,3,11,2,0,79,,minor confusion issue and priority corrected and priority corrected,1,0
+Students claiming harassment when disciplined for misbbehavior,Discipline,High,2,7,2,0,62,,,0,0
+students expressing discomfort with reduced flexibilit in deadlines,Examination,Low,3,8,0,0,67,,,0,0
+medical notes including outdated or rrelevant healthhcare information,Certificate & Records,Low,1,8,0,0,69,,,0,0
+Claim that impoortant material on the exam was not adequately covered in lectures,Examination,Medium,3,13,1,0,81,,delayed feedback minor and priority corrected and priority corrected,1,0
+"Late-night transport is very limited, and it becomes difficult to travel safely after a certain time.",Transportation,High,13,16,2,0,101,,,0,0
+refuses make-up exams without justification,Faculty,High,4,5,2,0,43,,,0,0
+stduents confessing to fabricating medical ddocuments after being confronted,Certificate & Records,Medium,1,9,1,0,76,,verification burden moderate issue and priority corrected and priority corrected,1,0
+I’ve seen drivers leave the stop early even when passengers were running toward the bus.,Transportation,High,13,15,2,0,88,,,0,0
+"Students sometimes come just to drop their bags or meet their friends, and they start talking loudly near the entrance.",Library,Medium,8,20,1,0,119,,,0,0
+"At this point, it feels less like a maintenance issue and more like complete neglect of something that should be a basic necessity.",Infrastructure,High,7,23,2,0,131,,,0,0
+There’s no proper communication about when the documents will be returned.,Lost & Found,Low,9,11,0,0,74,,label corrected based on content,1,0
+overcrowding leading to insufficient seating capacity,Infrastructure,High,7,6,2,0,53,,storage issue moderate inconvenience and priority corrected and priority corrected,1,0
+“Those goddamn canvas discussions where you have to respon to three people's comments.”,Faculty,Low,4,13,0,0,87,,,0,0
+academic integrity violapions involving falsified health records not being strictly punished rly urgent,Certificate & Records,Medium,1,13,1,0,103,,document fraud confirmed high severity and priority corrected and priority corrected,1,0
+Someone was tracking my location through online services and basically monitoring where I was. That felt deeply invasive and frightening.,Ragging & Harassment,High,11,20,2,0,137,,,0,0
+"Private bus operators avoid running buses on less crowded routes, which makes it very difficult for people living in remote areas to travel.",Transportation,High,13,23,2,0,140,,,0,0
+Innstructors ending classes early without covering planned material,Faculty,Low,4,8,0,0,67,,,0,0
+"Students can be marked absent even when they are trying to attend online classes, but their internet fails or does not support video-based learning properly.",IT & Digital Services,High,6,25,2,0,157,,,0,0
+"When suspicious incidents happen around parked vehicles, it creates anxiety for others using the same area.",Safety & Security,Medium,12,16,1,0,107,,,0,0
+students sned incomplete screenshots when asking for help,Discipline,Low,2,8,0,0,57,,attention issue moderate impact,1,0
+"The library was the only proper study space in the hospital, but students kept treating it like a place to gossip and hang out. That completely ruined the purpose of the space for people who actually needed silence to work or study.",Library,High,8,42,2,0,232,,,0,0
+The library did not show flexibility at first even though the situation happened during lockdown.,Library,Medium,8,15,1,0,97,,,0,0
+poor coordination between multiple instructors teaching the same course idk what to do,Faculty,Medium,4,13,1,0,86,,,0,0
+A student in my class was literally thrown out mid-lecture by the coordinator because her fees were unpaid. She hadn't done anything wrong — she just showed up to class. The whole class saw it and it was deeply uncomfortable for everyone.,Fees,High,5,42,2,0,238,,,0,0
+"Power cuts are happening in short bursts multiple times a day, which is more irritating than a single scheduled outage.",Infrastructure,High,7,20,2,0,119,,,0,0
+The presence of cameras does not always stop minor rule-breaking or casual behavior.,Safety & Security,Low,12,13,0,0,84,,,0,0
+fales cheating accusations from proctorring software during final exam,Examination,High,3,9,2,0,70,,,0,0
+"Parents refusing to pick up suspended children, blocking disciplinary enforcemwnt",Discipline,High,2,10,2,0,81,,,0,0
+"Some digital systems work, but not smoothly enough to trust them fully.",IT & Digital Services,Low,6,12,0,0,71,,,0,0
+"The library has become more of a social space than a proper study environment, which is frustrating for students who need silence.",Library,Low,8,22,0,0,130,,"printing facility issue, not library category",1,0
+"The portal sometimes loads very slowly even when it starts coming back online, which still makes it difficult to use properly.",IT & Digital Services,Medium,6,21,1,0,126,,,0,0
+"People tend to occupy large seating areas alone, which reduces availability for others.",Library,Medium,8,13,1,0,87,,,0,0
+Losing marks for minor arithmetic or rounding mstakes,Examination,Low,3,8,0,0,53,,,0,0
+Emergency contact information is not clearly displayed in all areas of the campus.,Safety & Security,Medium,12,13,1,0,82,,,0,0
+Staff are not being kept informed well enough during possible safety incidents happening nearby.,Safety & Security,Medium,12,14,1,0,96,,,0,0
+It is irritating to see people treat the library like a free billboard for their personal beliefs.,Library,Medium,8,17,1,0,98,,,0,0
+The communication from the school during this process was unclear and confusing.,Lost & Found,Low,9,12,0,0,80,,,0,0
+Administration threatened students and staff with suspension for speaking about the incident.,Safety & Security,High,12,12,2,0,93,,,0,0
+"The campus is mostly fine, but the supervision does not always feel evenly spread out.",Safety & Security,Low,12,15,0,0,86,,,0,0
+I feel like some low-level safety issues are tolerated until they become patterns.,Safety & Security,Low,12,13,0,0,82,,,0,0
+"Families are not being clearly told whether hotspots, public access points, or any internet assistance options are available through the district.",IT & Digital Services,Medium,6,21,1,0,146,,,0,0
+Third-party agwnts offering “no attendance” degrees under the name of recognized universities,Certificate & Records,Medium,1,12,1,0,93,,label corrected based on content and priority corrected,1,0
+Scholarship amount is still not credited but the fee deadline is tomorrow. Because of this I am very stressed and don’t know what to do.,Fees,High,5,25,2,0,136,,,0,0
+“Super hard exams wtth no support.”,Faculty,High,4,6,2,0,35,,,0,0
+complaint that technical failur during online exam impacted perfrance,Examination,High,3,9,2,0,69,,,0,0
+Concern that group project grading did not reflect unequal conttribution among members,Examination,Medium,3,12,1,0,86,,,0,0
+It’s frustrating when riders point out real transit problems and get treated like they’re just complaining for no reason.,Transportation,Medium,13,19,1,0,121,,,0,0
+"The reimbursement process was already stressful because the university had delayed vendor payments for months before, and dealing with another finance issue made it worse",Fees,Medium,5,25,1,0,170,,,0,0
+"I clearly told the school not to touch my belongings, but they ignored me and handled everything anyway.",Lost & Found,High,9,18,2,0,104,,,0,0
+"I am raising a serious complaint because younger children in primary classes were being beaten regularly for academic mistakes, incomplete homework, and even for failing to memorize answers properly. When very young children are made to fear adults every day, it causes lasting psychological harm and should be treated as a major safeguarding issue.",Ragging & Harassment,High,11,54,2,0,349,,,0,0
+"When the connection becomes unstable, video lectures freeze or lag, making it difficult to follow the lesson.",IT & Digital Services,Medium,6,17,1,0,109,,,0,0
+Understaffing preventing proper supervision and discipline enforcement so frustrated,Discipline,Medium,2,9,1,0,84,,,0,0
+ethial approval technicality risking zero marks despite completingg requirement,Examination,High,3,9,2,0,79,,,0,0
+I was riding properly on the road and still had someone throw a cup full of ice at me from a passing car. That kind of behavior is dangerous and completely unacceptable.,Transportation,High,13,32,2,0,169,,,0,0
+"I joined an internship expecting practical experience, but I ended up just watching recorded videos with no interaction.",Placement & Career Services,High,10,18,2,0,120,,,0,0
+I didn’t even realize how serious it was to submit original documents until I needed them back and couldn’t get them.,Lost & Found,Medium,9,21,1,0,117,,,0,0
+"""Students rely on proxies or internal marks instead of attending classes."" rly urgent",Attendance,Low,0,13,0,0,85,,label corrected based on content,1,0
+companise implementing stricter hiring polcies affecting genuine candidates,Certificate & Records,High,1,8,2,0,75,,,0,0
+i was unable to attend classes due to unavridable circumstances and now i am at risk of academic probation.,Attendance,High,0,19,2,0,107,,,0,0
+"My attendance is being marked on paper in college, but it is not being updated in the online ERP portal. Because of that, the portal is showing wrong information to both students and parents.",IT & Digital Services,High,6,34,2,0,191,,,0,0
+The university is hiding behind a vague internal notification to justify keeping money that was accidentally transferred twice. A rule saying fees are non-refundable doesn't apply to accidental double payments — that's just theft dressed up in paperwork.,Fees,High,5,38,2,0,254,,disturbance affects study moderately and priority corrected and priority corrected,1,0
+"Over time, this kind of setup definitely affects comfort and daily routine.",Infrastructure,Medium,7,12,1,0,75,,fee pressure issue not infrastructure and priority corrected and priority corrected,1,0
+It’s unclear what steps we are supposed to take after something gets stolen,Lost & Found,Medium,9,13,1,0,75,,,0,0
+Students are worried they might be fired after a low-paid trainee period.,Placement & Career Services,High,10,12,2,0,73,,,0,0
+Even small fee related doubts take forever to get clarified.,Fees,Low,5,10,0,0,60,,,0,0
+Students who are close to finishing a course or even their degree are being blocked by portal outages at critical moments.,IT & Digital Services,High,6,21,2,0,122,,,0,0
+The lack of proper safety in off-campus student housing areas makes it risky to travel back and forth.,Safety & Security,High,12,18,2,0,102,,penalty policy concern moderate and priority corrected and priority corrected,1,0
+assertion that similar answers received different grades arcoss students,Examination,Medium,3,9,1,0,72,,,0,0
+"Honestly, it’s unfair that there’s no flexibility or support system for students who are genuinely struggling financially.",Fees,Medium,5,17,1,0,122,,fine payment issue belongs to fees and priority corrected and priority corrected,1,0
+"it was voluntary but you know, that word doesn’t carry much value",Placement & Career Services,Medium,10,12,1,0,65,,,0,0
+"students experiencing academic harm (failing exams, lost work) ddue to accommodation failures",Discipline,High,2,12,2,0,93,,,0,0
+Some stops don’t even have proper seating.,Transportation,Low,13,7,0,0,42,,,0,0
+there is no proper silence maintained and it becomes really hard to concentrate for long hours,Infrastructure,High,7,16,2,0,94,,,0,0
+"class gets a bit noisy sometimes coz ppl keep chatting, not serious but yeah kinda distracting",Discipline,Low,2,16,0,0,94,,,0,0
+I feel attendance policies do not consider student well-being.,Attendance,Low,0,9,0,0,62,,,0,0
+It’s really frustrating how the college is not respecting official government orders and just doing whatever they want with fees.,Fees,High,5,20,2,0,129,,,0,0
+desks being uncomfortable for extended periods,Infrastructure,Medium,7,6,1,0,46,,,0,0
+Disability services lacking capacity to meet accommodation ddemand,Discipline,Medium,2,8,1,0,66,,,0,0
+"There was a situation where one patron tried to attack another person inside the library, and staff had to intervene before security arrived.",Library,High,8,23,2,0,141,,,0,0
+"""I cannot attend classes due to a serious health condition and teh attendance policy is not accommodating.""...",Attendance,High,0,17,2,0,110,,,0,0
+It is hard to find good library facilities with enough books and activities.,Library,Low,8,13,0,0,76,,,0,0
+eDlay in decpsion-making due to alck of clera institutional guidance,Certificate & Records,Medium,1,10,1,0,68,,,0,0
+"Students are forced to try workarounds like deleting part of the URL, using incognito mode, clearing cache, or switching browsers just to access the portal.",IT & Digital Services,Medium,6,25,1,0,156,,,0,0
+"There is a person who keeps asking me to hang out after college even though I already told him I am not interested. He keeps saying things like “just come once” or “why are you saying no,” and I feel uncomfortable because he doesn’t accept my answer.",Ragging & Harassment,Low,11,47,0,0,250,,,0,0
+"Even after asking clearly, no one gives a proper explanation of how the fee amount is calculated.",Fees,Medium,5,17,1,0,97,,,0,0
+Professor ignores studetn requests for clarification or help during critical academic situations,Faculty,Medium,4,12,1,0,96,,,0,0
+"I have raised repeated concerns about school security, but those concerns were ignored for far too long.",Safety & Security,Medium,12,17,1,0,104,,,0,0
+"Even though seniors said it was only for bonding, the way they talked made me feel like juniors had no choice but to listen.",Ragging & Harassment,Low,11,24,0,0,124,,,0,0
+It gets annoying when someone overtakes just to slow down in front of you a few seconds later.,Transportation,Medium,13,18,1,0,94,,,0,0
+"This is causing serious financial pressure on us, especially after relocating abroad, and it feels like the school just took the money and is ignoring us without any accountability.",Fees,High,5,29,2,0,181,,,0,0
+"“I had been working closely with a very senior professor outside my university, and over time some of his behavior started making me uncomfortable. At first I kept telling myself I was probably overthinking it because I didn’t want to jeopardize the collaboration.”",Ragging & Harassment,Medium,11,43,1,0,265,,,0,0
+The team is left short staffed whenever Sam takes a day off during the wexk.,Attendance,High,0,15,2,0,76,,,0,0
+Sam’s schedule is unpredictable due to frequent absences.,Attendance,Medium,0,8,1,0,57,,,0,0
+A friend suddenly stopped responding and kept the valuable items I had lent her.,Lost & Found,High,9,14,2,0,80,,,0,0
+"People sometimes watch videos or other content in the library without headphones, which disturbs everyone nearby.",Library,Low,8,16,0,0,113,,outdated computers minor inconvenience,1,0
+The placement cell takes too long to respond to student queries.,Placement & Career Services,Low,10,11,0,0,64,,,0,0
+"Not all routes have the same level of service, which makes travel uneven.",Transportation,Low,13,13,0,0,73,,,0,0
+"I feel stuck because without my original marksheet, even simple academic or admission-related plans become difficult.",Lost & Found,High,9,16,2,0,117,,,0,0
+It’s frustrating how slow the response was when I reported my missing item.,Lost & Found,Low,9,13,0,0,75,,priority corrected based on severity,1,0
+"Internship opportunities are often presented attractively, but the actual work and learning are not explained clearly.",Placement & Career Services,Medium,10,16,1,0,118,,,0,0
+"It’s honestly really frustrating that even after paying a huge amount already, they’re still not allowing me to sit for exams just because the full fee isn’t cleared.",Fees,High,5,28,2,0,166,,,0,0
+Delibreate intimidatoin or humiliation of stuuents during lectures,Faculty,High,4,8,2,0,66,,,0,0
+I feel the school depends too much on students managing themselves in situations where staff presence would help.,Safety & Security,Low,12,18,0,0,113,,,0,0
+It would be nice if the transport app showed more accurate arrival times.,Transportation,Low,13,13,0,0,73,,,0,0
+"Even after submitting payment proof, they keep asking again which is really frustrating.",Fees,Medium,5,13,1,0,88,,,0,0
+stuents feeling overwhelmed by inzeppendent study requirements!!!!,Examination,Low,3,7,0,0,66,,,0,0
+"Some classrooms have weaker internet compared to common areas, which makes it hard to use online materials during lectures.",IT & Digital Services,Low,6,19,0,0,123,,,0,0
+It feels really unfair that financial issues directly impact our academic access without any support system.,Fees,High,5,16,2,0,108,,,0,0
+"School bus drivers are expected to manage student fights, illness, vomiting, nosebleeds, and general chaos while still driving safely and finding somewhere to pull over. That is a lot to handle at once.",Transportation,High,13,33,2,0,202,,,0,0
+Honestly fee communication should be way better than this.,Fees,Low,5,9,0,0,58,,,0,0
+"My childhood was ruined because of teachers like this. What they did was not discipline, it was abuse and humiliation that stayed with me.",Ragging & Harassment,High,11,24,2,0,138,,,0,0
+"Online classes require stable internet all the time, but many students do not have a reliable connection at home.",IT & Digital Services,High,6,19,2,0,113,,,0,0
+Multiple ycar delay (3+ year)s in isssuing degree and consolidtaed amrksheet,Certificate & Records,High,1,11,2,0,76,,,0,0
+"Students wearing pajamas, slippers, blankets, or casual attire is viewed by some as inappropriate btu not owrht enforcing",Discipline,Low,2,18,0,0,121,,,0,0
+The entire placement environment feels stressful because we don’t know if the process is actually fair.,Placement & Career Services,Medium,10,16,1,0,103,,,0,0
+Fear of appearing rude when asking questions so frustrated,Faculty,Low,4,9,0,0,58,,,0,0
+"The whole practice feels wasteful, especially when most of those materials just end up in the trash.",Library,Medium,8,17,1,0,100,,,0,0
+"Interview results are not communicated on time, and we are left waiting.",Placement & Career Services,Low,10,12,0,0,72,,safety concern moderate,1,0
+"The job description sounded professional, but the actual work was door-to-door sales, which felt like a total bait-and-switch.",Placement & Career Services,High,10,18,2,0,126,,,0,0
+"Some teachers dislike specific fashion trends (e.g., crocs with socks, sagging pant,s extreme makeup) but do not see them as serious issues",Discipline,Low,2,22,0,0,139,,,0,0
+"Even when buses are available, there are too many stops on the route, which makes the whole journey feel unnecessarily long and tiring.",Transportation,Medium,13,23,1,0,135,,,0,0
+"Students are getting into serious physical fights in classrooms and hallways, which creates an unsafe environment for everyone.",Safety & Security,High,12,18,2,0,127,,,0,0
+Even small jokes by seniors sometimes made me uncomfortable because I didn’t know how to respond.,Ragging & Harassment,Low,11,16,0,0,97,,,0,0
+"Sometimes links just don’t work, and then I have to try again later which wastes time.",IT & Digital Services,Low,6,16,0,0,86,,,0,0
+"""I sometimes miss lcasses due to lack of motivation."" so frustrated",Attendance,Low,0,11,0,0,67,,,0,0
+they said my certificate will be ready but it’s still not done… i have deadlines coming up and this is honestly putting me in a bad situation,Certificate & Records,High,1,27,2,0,141,,,0,0
+“They made one student strip down to his underwear and act like Superman.”,Ragging & Harassment,High,11,13,2,0,74,,,0,0
+i was present for lab sessions but my attendance was not recorded.,Attendance,Medium,0,12,1,0,66,,,0,0
+belief that grading guidelines were not prprely followed by the evaluator,Examination,Medium,3,11,1,0,73,,,0,0
+certificates required for job/visa not issued on time,Certificate & Records,High,1,8,2,0,53,,document delay affects job or visa process and priority corrected and priority corrected,1,0
+request to consider improvement trend over the semester for a slight boost,Examination,Low,3,12,0,0,74,,,0,0
+"“I tried reporting harassment, but most teachers didn’t even respond to my complaints.”",Ragging & Harassment,Medium,11,13,1,0,87,,,0,0
+"Some classrooms only have a limited number of proper tables, and the rest of the students have to use the small attached desks which are not practical.",Infrastructure,Medium,7,27,1,0,151,,lack of charging points moderate and priority corrected and priority corrected,1,0
+"In extreme heat and humidity, losing power for hours isn’t just inconvenient, it becomes physically unbearable.",Infrastructure,Low,7,16,0,0,111,,,0,0
+"Even in quiet areas, people talk loudly, laugh for long periods, and disturb everyone around them. The silence rules are there, but nobody seems to take them seriously.",Library,Medium,8,28,1,0,168,,,0,0
+"Honestly, it feels unfair that we are being asked to pay extra charges for things that were never even mentioned during admission.",Fees,Medium,5,22,1,0,130,,,0,0
+students who cheat bbeing treated the same as those who donn’t,Examination,High,3,11,2,0,62,,,0,0
+"The school portal keeps showing fee dues even after payment, which creates confusion and stress.",Fees,Low,5,15,0,0,96,,label corrected based on content,1,0
+Students required to verify documents through multiple sources...,Certificate & Records,Medium,1,8,1,0,65,,,0,0
+This has happened before also in our class where money keeps getting stolen and nothing is done about it,Lost & Found,High,9,19,2,0,104,,,0,0
+Hostel monitoring is weak and wardens are not checking properly.,Safety & Security,Medium,12,10,1,0,64,,,0,0
+"I feel like I’m not doing my actual job anymore because most of my time goes into controlling noise, stopping food, and cleaning up after students instead of helping users.",Library,High,8,30,2,0,172,,,0,0
+Students losing academic year due to inability to acecss original documents,Certificate & Records,High,1,11,2,0,75,,,0,0
+some students only attend when prticipation or attendance idrectly affects their grade,Attendance,Medium,0,12,1,0,86,,,0,0
+"Facultyy allegedly manipulating exam conditions (timming, interruptions) affecting performance...",Discipline,High,2,9,2,0,97,,,0,0
+"Visitors often blame us for rules that were made by higher authorities, as if we personally decided them.",Library,Medium,8,18,1,0,105,,,0,0
+“Whole area smells like urine”,Infrastructure,High,7,5,2,0,30,,,0,0
+Infrastructure seems to always run at just enough capacity instead of being upgraded for future demand.,Infrastructure,High,7,16,2,0,103,,label corrected based on content and priority corrected,1,0
+complaints about excessive difficulty or length of exams,Examination,Medium,3,8,1,0,56,,,0,0
+It would help if the school reviewed simple safety habits more often with students and staff.,Safety & Security,Low,12,16,0,0,93,,,0,0
+The police just asked me to write a complaint on paper and didn’t even bother to properly review it.,Lost & Found,Medium,9,19,1,0,100,,,0,0
+students complain about attendance grading eveen when it is clearly stated in the syllabus,Attendance,Low,0,14,0,0,90,,,0,0
+"""She odes not utiiize the work from home option even when advised to."" rly urgent",Attendance,Medium,0,15,1,0,81,,,0,0
+I am being denied exam hall ticket due to attendance shortage caused by wrong marking.,Attendance,High,0,15,2,0,86,,,0,0
+students said they thought practice questions would directly repeat,Examination,Low,3,9,0,0,67,,performance reflection issue minor,1,0
+My attendance shortage is affecting my eligibility for certifications linked to attendance.,Attendance,High,0,12,2,0,91,,,0,0
+"A teacher compared me with other students and ignored me completely, as if I didn’t exist. It slowly destroyed my confidence.",Ragging & Harassment,Medium,11,21,1,0,125,,,0,0
+"I am filing a complaint because one teacher used extreme physical punishment in front of the whole class just to show his authority. He kept laughing while hitting me and even said that he was appointed in school to beat students. Hearing that from a teacher made me feel scared and unsafe, because it means the punishment was not accidental but intentional. I now feel afraid to attend his class.",Ragging & Harassment,High,11,70,2,0,397,,,0,0
+We don’t feel like we have enough freedom to make informed career choices because of all the placement pressure.,Placement & Career Services,Medium,10,19,1,0,112,,label corrected based on content and priority corrected,1,0
+It is hard to understand why people think leaving random Bibles and tracts around the library is acceptable.,Library,Low,8,18,0,0,108,,,0,0
+“One of the hardest parts was feeling like I had to keep proving that the problem was real before anyone would take it seriously.”,Ragging & Harassment,Low,11,24,0,0,130,,,0,0

@@ -22,8 +22,8 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 
-SOURCE_MODEL_DIR = r"outputs\distilbert_cfpb_mlm"
-FALLBACK_SOURCE_MODEL = "distilbert-base-uncased"
+SOURCE_MODEL_DIR = r"outputs\general_complaint_model"
+FALLBACK_SOURCE_MODEL = os.getenv("BACKBONE_MODEL_NAME", "roberta-base")
 OUTPUT_DIR = SOURCE_MODEL_DIR
 
 PRIMARY_DATA_PATH = r"data\dataset_clean.csv"
@@ -34,9 +34,11 @@ OPTIONAL_DATA_PATHS = [
     r"data\frontend_feedback.csv",
 ]
 GENERAL_DOMAIN_DATA_PATHS = [
+    r"data\complaint.csv",
     r"data\complaints.csv",
 ]
 STRICT_NARRATIVE_ONLY_PATHS = {
+    r"data\complaint.csv",
     r"data\complaints.csv",
 }
 
@@ -59,6 +61,7 @@ MAX_ROWS_BY_SOURCE = {
     r"data\val.csv": 10000,
     r"data\pseudo_feedback.csv": 5000,
     r"data\frontend_feedback.csv": 5000,
+    r"data\complaint.csv": 10000,
     r"data\complaints.csv": 10000,
 }
 CHUNKED_READ_THRESHOLD_BYTES = 100 * 1024 * 1024
@@ -87,8 +90,25 @@ def set_seed(seed: int) -> None:
 
 
 def resolve_source_model() -> str:
+    required_files = (
+        "config.json",
+        "tokenizer_config.json",
+    )
+    weight_files = (
+        "model.safetensors",
+        "pytorch_model.bin",
+    )
     if os.path.isdir(SOURCE_MODEL_DIR):
-        return SOURCE_MODEL_DIR
+        has_required = all(
+            os.path.exists(os.path.join(SOURCE_MODEL_DIR, name))
+            for name in required_files
+        )
+        has_weights = any(
+            os.path.exists(os.path.join(SOURCE_MODEL_DIR, name))
+            for name in weight_files
+        )
+        if has_required and has_weights:
+            return SOURCE_MODEL_DIR
     return FALLBACK_SOURCE_MODEL
 
 
@@ -205,13 +225,19 @@ def load_texts_from_csv(path: str) -> list[str]:
     if not os.path.exists(path):
         return []
 
+    print(f"Loading source: {path}")
     max_rows = MAX_ROWS_BY_SOURCE.get(path)
     file_size = os.path.getsize(path)
     if file_size >= CHUNKED_READ_THRESHOLD_BYTES:
+        print(
+            f"Reading large CSV in chunks from {path} "
+            f"({round(file_size / 1024**3, 2)} GB, cap={max_rows})"
+        )
         return load_texts_from_large_csv(path, max_rows=max_rows)
 
     df = pd.read_csv(path, low_memory=False)
     texts = build_text_series(df, path=path).tolist()
+    print(f"Loaded {len(texts)} usable rows from {path}")
     return sample_rows(texts, max_rows)
 
 
@@ -228,8 +254,10 @@ def normalize_text_series(series: pd.Series) -> pd.Series:
 def load_texts_from_large_csv(path: str, max_rows: int | None) -> list[str]:
     sampled: list[str] = []
     seen = 0
+    chunk_idx = 0
 
     for chunk in pd.read_csv(path, low_memory=False, chunksize=CHUNK_SIZE):
+        chunk_idx += 1
         texts = build_text_series(chunk, path=path).tolist()
         for text in texts:
             seen += 1
@@ -242,6 +270,10 @@ def load_texts_from_large_csv(path: str, max_rows: int | None) -> list[str]:
             replace_at = random.randint(0, seen - 1)
             if replace_at < max_rows:
                 sampled[replace_at] = text
+        print(
+            f"  chunk {chunk_idx}: scanned={seen} sampled={len(sampled)}",
+            flush=True,
+        )
 
     return sampled
 
@@ -249,11 +281,15 @@ def load_texts_from_large_csv(path: str, max_rows: int | None) -> list[str]:
 def build_corpus() -> tuple[list[str], dict[str, int]]:
     source_counts: dict[str, int] = {}
     all_texts: list[str] = []
+    loaded_paths: set[str] = set()
 
     for path in [PRIMARY_DATA_PATH, *OPTIONAL_DATA_PATHS, *GENERAL_DOMAIN_DATA_PATHS]:
+        if path in loaded_paths:
+            continue
         texts = load_texts_from_csv(path)
         if not texts:
             continue
+        loaded_paths.add(path)
         source_counts[path] = len(texts)
         all_texts.extend(texts)
 
@@ -288,7 +324,7 @@ def main() -> None:
     print(f"Using source model: {base_model}")
 
     texts, source_counts = build_corpus()
-    print(f"Loaded {len(texts)} deduplicated complaint texts for continued pretraining.")
+    print(f"Loaded {len(texts)} deduplicated complaint texts for backbone pretraining.")
     for path, count in source_counts.items():
         print(f"  - {path}: {count}")
 

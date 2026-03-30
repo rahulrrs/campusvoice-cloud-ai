@@ -25,6 +25,16 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.utils.complaint_ml import (
+    METADATA_FEATURE_NAMES,
+    build_metadata_feature_map,
+    feature_map_to_vector,
+    fit_metadata_scaler,
+    scale_feature_vector,
+)
+from src.utils.model_paths import load_project_env, resolve_backbone_source
+
+load_project_env(PROJECT_ROOT)
 
 # ---------------- CONFIG ----------------
 DATA_DIR = PROJECT_ROOT / "data"
@@ -36,25 +46,21 @@ PSEUDO_FEEDBACK_PATH = DATA_DIR / "pseudo_feedback.csv"
 FRONTEND_FEEDBACK_PATH = DATA_DIR / "frontend_feedback.csv"
 OUT_DIR = OUTPUT_DIR
 
-BASE_MODEL = PROJECT_ROOT / "outputs" / "general_complaint_model"
-LEGACY_BASE_MODEL = PROJECT_ROOT / "outputs" / "distilbert_cfpb_mlm"
-FALLBACK_MODEL = "distilbert-base-uncased"
-
 DEFAULT_MAX_LENGTH = 192
 SEED = 42
 DEFAULT_EPOCHS = 6
-DEFAULT_BATCH = 16
+DEFAULT_BATCH = 8
 DEFAULT_GRAD_ACCUM = 2
 LR = 2.0e-5
 WEIGHT_DECAY = 0.01
 
-LAMBDA_LABEL = 1.0
-LAMBDA_PRIORITY = 1.2
+LAMBDA_LABEL = float(os.getenv("LAMBDA_LABEL", "1.05"))
+LAMBDA_PRIORITY = float(os.getenv("LAMBDA_PRIORITY", "1.30"))
 
 LABEL_FOCAL_GAMMA = 1.5
-PRIORITY_FOCAL_GAMMA = 1.0
-LABEL_SMOOTHING = 0.05
-PRIORITY_SMOOTHING = 0.03
+PRIORITY_FOCAL_GAMMA = float(os.getenv("PRIORITY_FOCAL_GAMMA", "1.2"))
+LABEL_SMOOTHING = float(os.getenv("LABEL_SMOOTHING", "0.04"))
+PRIORITY_SMOOTHING = float(os.getenv("PRIORITY_SMOOTHING", "0.02"))
 
 MAX_PER_CLASS = 0
 OVERSAMPLE_HIGH_PRIORITY = 1
@@ -66,7 +72,67 @@ USE_PSEUDO_FEEDBACK = False
 MAX_PSEUDO_FEEDBACK_ROWS = 5000
 USE_FRONTEND_FEEDBACK = False
 MAX_FRONTEND_FEEDBACK_ROWS = 10000
+REVIEWED_NOTES_WEIGHT_BOOST = float(os.getenv("REVIEWED_NOTES_WEIGHT_BOOST", "1.15"))
+REVIEWED_CORRECTION_WEIGHT_BOOST = float(os.getenv("REVIEWED_CORRECTION_WEIGHT_BOOST", "1.35"))
 # ---------------------------------------
+
+REVIEW_NOTE_FEATURE_NAMES = [
+    "review_note_present",
+    "review_note_text_len_chars",
+    "review_note_word_count",
+    "review_note_urgency_term_hits",
+    "review_note_deadline_term_hits",
+    "review_note_negative_term_hits",
+    "review_note_harassment_term_hits",
+    "review_note_academic_term_hits",
+    "review_note_infrastructure_term_hits",
+    "review_status_approved_flag",
+]
+
+
+def derive_id_maps_from_splits(train_df: pd.DataFrame, val_df: pd.DataFrame) -> tuple[dict[int, str], dict[int, str]]:
+    merged = pd.concat([train_df, val_df], ignore_index=True)
+
+    label_pairs = (
+        merged[["label_id", "label"]]
+        .dropna()
+        .assign(label=lambda frame: frame["label"].astype(str).str.strip())
+        .drop_duplicates()
+    )
+    label_counts = label_pairs.groupby("label_id")["label"].nunique()
+    if (label_counts > 1).any():
+        raise ValueError(
+            f"Inconsistent label names for label_id values: {label_counts[label_counts > 1].to_dict()}"
+        )
+    id_to_label = {
+        int(row["label_id"]): str(row["label"]).strip()
+        for _, row in label_pairs.sort_values("label_id").iterrows()
+    }
+
+    priority_source_col = "priority" if "priority" in merged.columns else None
+    id_to_priority: dict[int, str] = {}
+    if priority_source_col is not None:
+        prio_pairs = (
+            merged[["priority_id_fixed", priority_source_col]]
+            .dropna()
+            .assign(priority=lambda frame: frame[priority_source_col].astype(str).str.strip())
+            .drop_duplicates(subset=["priority_id_fixed", "priority"])
+        )
+        prio_counts = prio_pairs.groupby("priority_id_fixed")["priority"].nunique()
+        if (prio_counts > 1).any():
+            raise ValueError(
+                f"Inconsistent priority names for priority_id_fixed values: {prio_counts[prio_counts > 1].to_dict()}"
+            )
+        id_to_priority = {
+            int(row["priority_id_fixed"]): str(row["priority"]).strip()
+            for _, row in prio_pairs.sort_values("priority_id_fixed").iterrows()
+        }
+
+    default_priority_names = {0: "Low", 1: "Medium", 2: "High"}
+    for key, value in default_priority_names.items():
+        id_to_priority.setdefault(key, value)
+
+    return id_to_label, id_to_priority
 
 
 def build_training_arguments(
@@ -235,7 +301,55 @@ def focal_smoothed_ce(
     return (focal_factor * ce).mean()
 
 
-class DistilBertMultiTask(nn.Module):
+def build_priority_cost_matrix(num_classes: int) -> torch.Tensor:
+    matrix = torch.zeros((num_classes, num_classes), dtype=torch.float32)
+    for actual in range(num_classes):
+        for predicted in range(num_classes):
+            if actual == predicted:
+                continue
+            matrix[actual, predicted] = abs(actual - predicted) * 0.4
+    if num_classes >= 3:
+        matrix[2, 0] = 1.35
+        matrix[2, 1] = 0.7
+        matrix[1, 0] = 0.45
+        matrix[0, 2] = 0.9
+        matrix[0, 1] = 0.3
+        matrix[1, 2] = 0.55
+    return matrix
+
+
+def cost_sensitive_focal_smoothed_ce(
+    logits: torch.Tensor,
+    targets: torch.Tensor,
+    class_weights: torch.Tensor | None,
+    gamma: float,
+    label_smoothing: float,
+    cost_matrix: torch.Tensor | None,
+) -> torch.Tensor:
+    base_loss = focal_smoothed_ce(
+        logits=logits,
+        targets=targets,
+        class_weights=class_weights,
+        gamma=gamma,
+        label_smoothing=label_smoothing,
+    )
+    if cost_matrix is None:
+        return base_loss
+
+    probs = torch.softmax(logits, dim=-1)
+    expected_cost = (probs * cost_matrix[targets]).sum(dim=1)
+    multiplier = 1.0 + expected_cost
+    ce_per_item = torch.nn.functional.cross_entropy(
+        logits,
+        targets,
+        reduction="none",
+        weight=class_weights,
+        label_smoothing=label_smoothing,
+    )
+    return (ce_per_item * multiplier).mean() * 0.5 + base_loss * 0.5
+
+
+class EncoderMultiTask(nn.Module):
     def __init__(
         self,
         model_name: str,
@@ -243,25 +357,54 @@ class DistilBertMultiTask(nn.Module):
         num_priority: int,
         label_weights: torch.Tensor,
         priority_weights: torch.Tensor,
+        label_metadata_dim: int = 0,
+        priority_metadata_dim: int = 0,
+        priority_cost_matrix: torch.Tensor | None = None,
     ):
         super().__init__()
         self.backbone = AutoModel.from_pretrained(model_name)
         hidden = self.backbone.config.hidden_size
+        self.label_metadata_dim = label_metadata_dim
+        self.priority_metadata_dim = priority_metadata_dim
 
         self.dropout = nn.Dropout(0.1)
 
         self.label_dropout = nn.Dropout(0.2)
+        if label_metadata_dim > 0:
+            self.label_meta_proj = nn.Sequential(
+                nn.Linear(label_metadata_dim, hidden),
+                nn.LayerNorm(hidden),
+                nn.GELU(),
+                nn.Dropout(0.1),
+            )
+        else:
+            self.label_meta_proj = None
         self.label_hidden = nn.Linear(hidden, hidden // 2)
         self.label_head = nn.Linear(hidden // 2, num_labels)
 
+        if priority_metadata_dim > 0:
+            self.priority_meta_proj = nn.Sequential(
+                nn.Linear(priority_metadata_dim, hidden // 4),
+                nn.LayerNorm(hidden // 4),
+                nn.GELU(),
+                nn.Dropout(0.1),
+            )
+            prio_input = hidden + (hidden // 4)
+        else:
+            self.priority_meta_proj = None
+            prio_input = hidden
+
         self.prio_dropout = nn.Dropout(0.2)
-        self.prio_hidden = nn.Linear(hidden, hidden // 4)
+        self.prio_hidden = nn.Linear(prio_input, hidden // 4)
         self.prio_head = nn.Linear(hidden // 4, num_priority)
 
         self.act = nn.GELU()
 
         self.register_buffer("label_weights", label_weights)
         self.register_buffer("priority_weights", priority_weights)
+        if priority_cost_matrix is None:
+            priority_cost_matrix = build_priority_cost_matrix(num_priority)
+        self.register_buffer("priority_cost_matrix", priority_cost_matrix)
 
     def forward(
         self,
@@ -269,13 +412,22 @@ class DistilBertMultiTask(nn.Module):
         attention_mask=None,
         labels=None,
         priority_labels=None,
+        metadata_features=None,
         **kwargs,
     ):
         out = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
         pooled = self.dropout(out.last_hidden_state[:, 0])
 
-        label_logits = self.label_head(self.act(self.label_hidden(self.label_dropout(pooled))))
-        prio_logits = self.prio_head(self.act(self.prio_hidden(self.prio_dropout(pooled))))
+        label_input = pooled
+        if self.label_metadata_dim > 0 and metadata_features is not None:
+            label_input = label_input + self.label_meta_proj(metadata_features.float())
+        label_logits = self.label_head(self.act(self.label_hidden(self.label_dropout(label_input))))
+        priority_input = pooled
+        if self.priority_metadata_dim > 0 and metadata_features is not None:
+            meta = metadata_features.float()
+            meta_repr = self.priority_meta_proj(meta)
+            priority_input = torch.cat([priority_input, meta_repr], dim=-1)
+        prio_logits = self.prio_head(self.act(self.prio_hidden(self.prio_dropout(priority_input))))
 
         loss = None
         if labels is not None and priority_labels is not None:
@@ -292,6 +444,14 @@ class DistilBertMultiTask(nn.Module):
                 class_weights=self.priority_weights,
                 gamma=PRIORITY_FOCAL_GAMMA,
                 label_smoothing=PRIORITY_SMOOTHING,
+            )
+            loss_prio = cost_sensitive_focal_smoothed_ce(
+                logits=prio_logits,
+                targets=priority_labels,
+                class_weights=self.priority_weights,
+                gamma=PRIORITY_FOCAL_GAMMA,
+                label_smoothing=PRIORITY_SMOOTHING,
+                cost_matrix=self.priority_cost_matrix,
             )
             loss = (LAMBDA_LABEL * loss_label) + (LAMBDA_PRIORITY * loss_prio)
 
@@ -313,6 +473,7 @@ class MultiTaskTrainer(Trainer):
             attention_mask=inputs.get("attention_mask"),
             labels=inputs.get("labels"),
             priority_labels=inputs.get("priority_labels"),
+            metadata_features=inputs.get("metadata_features"),
         )
         loss = outputs["loss"]
         return (loss, outputs) if return_outputs else loss
@@ -327,6 +488,7 @@ class MultiTaskTrainer(Trainer):
                 attention_mask=inputs.get("attention_mask"),
                 labels=None,
                 priority_labels=None,
+                metadata_features=inputs.get("metadata_features"),
             )
 
         label_logits = outputs["label_logits"]
@@ -340,6 +502,7 @@ class MultiTaskTrainer(Trainer):
                     attention_mask=inputs.get("attention_mask"),
                     labels=labels,
                     priority_labels=priority_labels,
+                    metadata_features=inputs.get("metadata_features"),
                 )
             loss = out_loss["loss"].detach()
 
@@ -426,24 +589,20 @@ def main():
     if missing:
         raise ValueError(f"Missing columns in train.csv: {missing}")
 
+    map_required_cols = {"text", "label", "label_id", "priority", "priority_id_fixed"}
+    merged_columns = set(train_df.columns) | set(val_df.columns)
+    missing_map_cols = map_required_cols - merged_columns
+    if missing_map_cols:
+        raise ValueError(f"Missing columns required to derive label maps from train/val: {missing_map_cols}")
+
+    id_to_label, id_to_priority = derive_id_maps_from_splits(train_df, val_df)
+
     train_df = train_df[["text", "label_id", "priority_id_fixed"]].rename(
         columns={"label_id": "labels", "priority_id_fixed": "priority_labels"}
     )
     val_df = val_df[["text", "label_id", "priority_id_fixed"]].rename(
         columns={"label_id": "labels", "priority_id_fixed": "priority_labels"}
     )
-
-    label_map_path = os.path.join(OUT_DIR, "id_to_label.json")
-    prio_map_path = os.path.join(OUT_DIR, "id_to_priority.json")
-    if not os.path.exists(label_map_path):
-        raise FileNotFoundError(f"Missing: {label_map_path} (run clean_dataset.py first)")
-    if not os.path.exists(prio_map_path):
-        raise FileNotFoundError(f"Missing: {prio_map_path} (run clean_dataset.py first)")
-
-    with open(label_map_path, "r", encoding="utf-8") as f:
-        id_to_label = {int(k): v for k, v in json.load(f).items()}
-    with open(prio_map_path, "r", encoding="utf-8") as f:
-        id_to_priority = {int(k): v for k, v in json.load(f).items()}
 
     num_labels = len(id_to_label)
     num_priority = len(id_to_priority)
@@ -457,6 +616,42 @@ def main():
     val_df["priority_labels"] = val_df["priority_labels"].astype(int)
     validate_targets(train_df, num_labels=num_labels, num_priority=num_priority, split_name="train")
     validate_targets(val_df, num_labels=num_labels, num_priority=num_priority, split_name="val")
+
+    metadata_feature_names = METADATA_FEATURE_NAMES + REVIEW_NOTE_FEATURE_NAMES
+
+    def build_review_note_feature_map(row: pd.Series) -> dict[str, float]:
+        review_notes = str(row.get("review_notes") or "").strip()
+        review_status = str(row.get("review_status") or "").strip().lower()
+        if not review_notes:
+            return {name: 0.0 for name in REVIEW_NOTE_FEATURE_NAMES}
+
+        note_feature_map = build_metadata_feature_map(text=review_notes)
+        return {
+            "review_note_present": 1.0,
+            "review_note_text_len_chars": float(note_feature_map.get("text_len_chars", 0.0)),
+            "review_note_word_count": float(note_feature_map.get("word_count", 0.0)),
+            "review_note_urgency_term_hits": float(note_feature_map.get("urgency_term_hits", 0.0)),
+            "review_note_deadline_term_hits": float(note_feature_map.get("deadline_term_hits", 0.0)),
+            "review_note_negative_term_hits": float(note_feature_map.get("negative_term_hits", 0.0)),
+            "review_note_harassment_term_hits": float(note_feature_map.get("harassment_term_hits", 0.0)),
+            "review_note_academic_term_hits": float(note_feature_map.get("academic_term_hits", 0.0)),
+            "review_note_infrastructure_term_hits": float(note_feature_map.get("infrastructure_term_hits", 0.0)),
+            "review_status_approved_flag": float(review_status == "approved"),
+        }
+
+    def enrich_with_metadata(df: pd.DataFrame, scaler: dict | None = None) -> tuple[pd.DataFrame, dict | None]:
+        feature_rows: list[list[float]] = []
+        for _, row in df.iterrows():
+            feature_map = build_metadata_feature_map(text=str(row["text"]))
+            feature_map.update(build_review_note_feature_map(row))
+            feature_rows.append(feature_map_to_vector(feature_map, metadata_feature_names))
+        active_scaler = scaler or fit_metadata_scaler(feature_rows, metadata_feature_names)
+        df = df.copy()
+        df["metadata_features"] = [
+            scale_feature_vector(row, active_scaler)
+            for row in feature_rows
+        ]
+        return df, active_scaler
 
     if USE_FRONTEND_FEEDBACK and os.path.exists(FRONTEND_FEEDBACK_PATH):
         try:
@@ -563,15 +758,34 @@ def main():
         lambda x: 1.0 / max(int(prio_counts.get(int(x), 1)), 1)
     )
     sample_weights = (label_inv.pow(SAMPLER_LABEL_EXP) * prio_inv.pow(SAMPLER_PRIORITY_EXP)).values
+    if "review_has_notes" in train_df.columns:
+        reviewed_notes_mask = pd.to_numeric(train_df["review_has_notes"], errors="coerce").fillna(0).astype(int) > 0
+        if reviewed_notes_mask.any():
+            sample_weights = sample_weights * np.where(reviewed_notes_mask.to_numpy(), REVIEWED_NOTES_WEIGHT_BOOST, 1.0)
+            print(
+                f"Applied reviewed-notes weight boost x{REVIEWED_NOTES_WEIGHT_BOOST} "
+                f"to {int(reviewed_notes_mask.sum())} training rows."
+            )
+    if "review_was_corrected" in train_df.columns:
+        reviewed_corrected_mask = (
+            pd.to_numeric(train_df["review_was_corrected"], errors="coerce").fillna(0).astype(int) > 0
+        )
+        if reviewed_corrected_mask.any():
+            sample_weights = sample_weights * np.where(
+                reviewed_corrected_mask.to_numpy(),
+                REVIEWED_CORRECTION_WEIGHT_BOOST,
+                1.0,
+            )
+            print(
+                f"Applied reviewed-correction weight boost x{REVIEWED_CORRECTION_WEIGHT_BOOST} "
+                f"to {int(reviewed_corrected_mask.sum())} training rows."
+            )
     sample_weights = sample_weights / sample_weights.mean()
     sample_weights = torch.tensor(sample_weights, dtype=torch.double)
 
-    if os.path.isdir(BASE_MODEL):
-        base_model = BASE_MODEL
-    elif os.path.isdir(LEGACY_BASE_MODEL):
-        base_model = LEGACY_BASE_MODEL
-    else:
-        base_model = FALLBACK_MODEL
+    base_model, backbone_note = resolve_backbone_source(PROJECT_ROOT, OUT_DIR)
+    if backbone_note:
+        print(backbone_note)
     print("Using base model:", base_model)
     tokenizer = AutoTokenizer.from_pretrained(base_model)
     dynamic_max_length = choose_dynamic_max_length(tokenizer, train_df["text"])
@@ -588,6 +802,9 @@ def main():
         },
     )
 
+    train_df, metadata_scaler = enrich_with_metadata(train_df)
+    val_df, _ = enrich_with_metadata(val_df, scaler=metadata_scaler)
+
     train_ds = Dataset.from_pandas(train_df, preserve_index=False)
     val_ds = Dataset.from_pandas(val_df, preserve_index=False)
 
@@ -598,12 +815,14 @@ def main():
     val_ds = val_ds.map(tok_fn, batched=True, remove_columns=["text"])
     collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
-    model = DistilBertMultiTask(
+    model = EncoderMultiTask(
         model_name=base_model,
         num_labels=num_labels,
         num_priority=num_priority,
         label_weights=label_w,
         priority_weights=prio_w,
+        label_metadata_dim=len(metadata_feature_names),
+        priority_metadata_dim=len(metadata_feature_names),
     )
 
     use_fp16 = torch.cuda.is_available()
@@ -642,6 +861,9 @@ def main():
 
     with open(os.path.join(OUT_DIR, "id_to_priority.json"), "w", encoding="utf-8") as f:
         json.dump({str(k): v for k, v in id_to_priority.items()}, f, indent=2)
+
+    with open(os.path.join(OUT_DIR, "metadata_config.json"), "w", encoding="utf-8") as f:
+        json.dump(metadata_scaler, f, indent=2)
 
     print("Done")
     print(f"Training outputs saved under: {OUT_DIR}")

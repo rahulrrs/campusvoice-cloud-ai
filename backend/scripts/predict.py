@@ -1,3 +1,4 @@
+import argparse
 import json
 import math
 import os
@@ -15,12 +16,15 @@ from transformers import AutoModel, AutoTokenizer
 
 # ========= CONFIG =========
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.utils.complaint_ml import build_metadata_feature_map, feature_map_to_vector, scale_feature_vector
+from src.utils.model_paths import load_project_env, resolve_backbone_source
+
 MODEL_DIR = PROJECT_ROOT / "outputs" / "edu_classifier_multitask"
 MAX_LENGTH = 256
-
-BACKBONE_DIR = PROJECT_ROOT / "outputs" / "general_complaint_model"
-LEGACY_BACKBONE_DIR = PROJECT_ROOT / "outputs" / "distilbert_cfpb_mlm"
-FALLBACK_BACKBONE = "distilbert-base-uncased"
+PREDICT_BATCH_SIZE = int(os.getenv("PREDICT_BATCH_SIZE", "32"))
 
 LABEL_THRESHOLD = 0.60
 PRIO_THRESHOLD = 0.55
@@ -35,27 +39,20 @@ AUTO_RETRAIN_ENABLED = True
 AUTO_RETRAIN_MIN_NEW_SAMPLES = 200
 AUTO_RETRAIN_STATE_PATH = MODEL_DIR / "auto_retrain_state.json"
 
-# Feature flags
-ENABLE_EXAM_URGENCY_OVERRIDE = True
-ENABLE_EXAM_LABEL_HEURISTIC = True
-ENABLE_HOSTEL_WATER_OVERRIDE = True
-ENABLE_IT_PORTAL_OVERRIDE = True
-ENABLE_SAFETY_THREAT_OVERRIDE = True
-ENABLE_LOST_FOUND_OVERRIDE = True
-ENABLE_IT_PRIORITY_OVERRIDE = True
-ENABLE_SCHOLARSHIP_URGENCY_OVERRIDE = True
-ENABLE_RAGGING_LABEL_OVERRIDE = True
-ENABLE_TRANSPORT_PRIORITY_OVERRIDE = True
-ENABLE_SCHOLARSHIP_LABEL_OVERRIDE = True
+# Keep legacy label heuristics off by default for the new 14-category dataset.
+ENABLE_EXAM_URGENCY_OVERRIDE = False
+ENABLE_EXAM_LABEL_HEURISTIC = False
+ENABLE_FACULTY_LABEL_HEURISTIC = False
+ENABLE_CERTIFICATE_LABEL_HEURISTIC = False
+ENABLE_DISCIPLINE_LABEL_HEURISTIC = False
+ENABLE_DISCIPLINE_PRIORITY_OVERRIDE = False
 
 EXAM_OVERRIDE_LABEL_NAME = "Examination"
-HOSTEL_WATER_OVERRIDE_LABEL_NAME = "Hostel"
-IT_OVERRIDE_LABEL_NAME = "IT & Digital Services"
-SAFETY_OVERRIDE_LABEL_NAME = "Ragging / Harassment"
-LOST_FOUND_OVERRIDE_LABEL_NAME = "Lost & Found"
-SCHOLARSHIP_OVERRIDE_LABEL_NAME = "Fees"
-TRANSPORT_OVERRIDE_LABEL_NAME = "Transportation"
+FACULTY_OVERRIDE_LABEL_NAME = "Faculty"
+CERTIFICATE_OVERRIDE_LABEL_NAME = "Certificate & Records"
+DISCIPLINE_OVERRIDE_LABEL_NAME = "Discipline"
 # ==========================
+load_project_env(PROJECT_ROOT)
 
 
 id_to_label_path = os.path.join(MODEL_DIR, "id_to_label.json")
@@ -70,49 +67,95 @@ with open(id_to_label_path, "r", encoding="utf-8") as f:
 with open(id_to_priority_path, "r", encoding="utf-8") as f:
     id_to_priority = {int(k): v for k, v in json.load(f).items()}
 
+loaded_labels = set(id_to_label.values())
+if not loaded_labels:
+    raise ValueError(
+        "Classifier label mapping is empty. Check id_to_label.json."
+    )
+
 label_to_id = {v: k for k, v in id_to_label.items()}
 priority_to_id = {v: k for k, v in id_to_priority.items()}
 num_labels = len(id_to_label)
 num_priority = len(id_to_priority)
 
-if os.path.exists(os.path.join(MODEL_DIR, "config.json")):
-    backbone_name = MODEL_DIR
-elif os.path.isdir(BACKBONE_DIR):
-    backbone_name = BACKBONE_DIR
-elif os.path.isdir(LEGACY_BACKBONE_DIR):
-    backbone_name = LEGACY_BACKBONE_DIR
-else:
-    backbone_name = FALLBACK_BACKBONE
+tokenizer_config_path = MODEL_DIR / "tokenizer_config.json"
+if not tokenizer_config_path.exists():
+    raise FileNotFoundError(
+        f"Missing classifier tokenizer config: {tokenizer_config_path}. "
+        "The edu classifier tokenizer must be loaded from its own saved model directory."
+    )
+backbone_name, backbone_note = resolve_backbone_source(PROJECT_ROOT, MODEL_DIR)
+if backbone_note:
+    print(backbone_note)
 print("Using backbone:", backbone_name)
 
-tok_src = MODEL_DIR if os.path.exists(os.path.join(MODEL_DIR, "tokenizer_config.json")) else backbone_name
+tok_src = str(MODEL_DIR)
 print("Using tokenizer:", tok_src)
 tokenizer = AutoTokenizer.from_pretrained(tok_src)
+metadata_config_path = MODEL_DIR / "metadata_config.json"
+metadata_config = None
+if metadata_config_path.exists():
+    with open(metadata_config_path, "r", encoding="utf-8") as f:
+        metadata_config = json.load(f)
 
 
-class DistilBertMultiTask(nn.Module):
-    def __init__(self, backbone_name: str, num_labels: int, num_priority: int):
+class EncoderMultiTask(nn.Module):
+    def __init__(
+        self,
+        backbone_name: str,
+        num_labels: int,
+        num_priority: int,
+        label_metadata_dim: int = 0,
+        priority_metadata_dim: int = 0,
+    ):
         super().__init__()
         self.backbone = AutoModel.from_pretrained(backbone_name)
         hidden = self.backbone.config.hidden_size
+        self.label_metadata_dim = label_metadata_dim
+        self.priority_metadata_dim = priority_metadata_dim
         self.dropout = nn.Dropout(0.1)
         self.label_dropout = nn.Dropout(0.2)
+        if label_metadata_dim > 0:
+            self.label_meta_proj = nn.Sequential(
+                nn.Linear(label_metadata_dim, hidden),
+                nn.LayerNorm(hidden),
+                nn.GELU(),
+                nn.Dropout(0.1),
+            )
+        else:
+            self.label_meta_proj = None
         self.label_hidden = nn.Linear(hidden, hidden // 2)
         self.label_head = nn.Linear(hidden // 2, num_labels)
+        if priority_metadata_dim > 0:
+            self.priority_meta_proj = nn.Sequential(
+                nn.Linear(priority_metadata_dim, hidden // 4),
+                nn.LayerNorm(hidden // 4),
+                nn.GELU(),
+                nn.Dropout(0.1),
+            )
+            prio_input = hidden + (hidden // 4)
+        else:
+            self.priority_meta_proj = None
+            prio_input = hidden
         self.prio_dropout = nn.Dropout(0.2)
-        self.prio_hidden = nn.Linear(hidden, hidden // 4)
+        self.prio_hidden = nn.Linear(prio_input, hidden // 4)
         self.prio_head = nn.Linear(hidden // 4, num_priority)
         self.act = nn.GELU()
 
-    def forward(self, input_ids=None, attention_mask=None, **kwargs):
+    def forward(self, input_ids=None, attention_mask=None, metadata_features=None, **kwargs):
         out = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
         pooled = self.dropout(out.last_hidden_state[:, 0])
-        label_logits = self.label_head(self.act(self.label_hidden(self.label_dropout(pooled))))
-        prio_logits = self.prio_head(self.act(self.prio_hidden(self.prio_dropout(pooled))))
+        label_input = pooled
+        if self.label_metadata_dim > 0 and metadata_features is not None:
+            label_input = label_input + self.label_meta_proj(metadata_features.float())
+        label_logits = self.label_head(self.act(self.label_hidden(self.label_dropout(label_input))))
+        priority_input = pooled
+        if self.priority_metadata_dim > 0 and metadata_features is not None:
+            priority_input = torch.cat([priority_input, self.priority_meta_proj(metadata_features.float())], dim=-1)
+        prio_logits = self.prio_head(self.act(self.prio_hidden(self.prio_dropout(priority_input))))
         return label_logits, prio_logits
 
 
-model = DistilBertMultiTask(backbone_name, num_labels=num_labels, num_priority=num_priority)
 safe_path = os.path.join(MODEL_DIR, "model.safetensors")
 bin_path = os.path.join(MODEL_DIR, "pytorch_model.bin")
 if os.path.exists(safe_path):
@@ -123,8 +166,18 @@ elif os.path.exists(bin_path):
     state = torch.load(bin_path, map_location="cpu")
 else:
     raise FileNotFoundError(f"No weights found. Expected:\n  {safe_path}\n  {bin_path}")
-for k in ("label_weights", "priority_weights"):
+for k in ("label_weights", "priority_weights", "priority_cost_matrix"):
     state.pop(k, None)
+metadata_dim = len(metadata_config.get("feature_names", [])) if isinstance(metadata_config, dict) else 0
+has_label_metadata_layers = any(key.startswith("label_meta_proj.") for key in state)
+has_metadata_layers = any(key.startswith("priority_meta_proj.") for key in state)
+model = EncoderMultiTask(
+    backbone_name,
+    num_labels=num_labels,
+    num_priority=num_priority,
+    label_metadata_dim=metadata_dim if has_label_metadata_layers else 0,
+    priority_metadata_dim=metadata_dim if has_metadata_layers else 0,
+)
 model.load_state_dict(state, strict=True)
 print("Weights loaded (strict=True)")
 
@@ -154,42 +207,25 @@ _BLOCKER_RE = re.compile(
     r"not\s*released|not\s*available|deadline|last\s*date|starts?\s*(tomorrow|today))\b",
     re.I,
 )
-_WATER_OUTAGE_RE = re.compile(
-    r"\b(no\s*water|water\s*(is\s*)?not\s*available|water\s*supply\s*.{0,20}\bdown\b|"
-    r"water\s*problem|water\s*outage|water\s*cut)\b",
+_CERTIFICATE_RECORD_RE = re.compile(
+    r"\b(certificate|bonafide|tc\b|transfer\s*certificate|migration|transcript|"
+    r"marksheet|mark\s*sheet|degree|provisional|id\s*card|record|records)\b",
     re.I,
 )
-_DURATION_RE = re.compile(r"\b(\d+)\s*(day|days|d)\b", re.I)
-_IT_PORTAL_RE = re.compile(
-    r"\b(portal|website|login|server|app|erp|lms|dashboard|id\s*card|wifi|network|internet)\b",
+_FACULTY_RE = re.compile(
+    r"\b(faculty|prof|professor|teacher|lecture|lecturer|class|course|assignment|"
+    r"grading|marks?|internal\s*score|syllabus|instructor)\b",
     re.I,
 )
-_IT_FAILURE_RE = re.compile(
-    r"\b(down|not\s*working|unable\s*to|cannot|can't|failed|failure|error|bug|issue|"
-    r"stuck|crash|slow|very\s*slow|timeout|timed\s*out|pending|not\s*approved|not\s*credited)\b",
-    re.I,
-)
-_ACADEMIC_PROCESS_RE = re.compile(
-    r"\b(assignment|submission|marks?|attendance|faculty|internal\s*score|leave\s*application|"
-    r"medical\s*proof|class|lecture|exam)\b",
-    re.I,
-)
-_SAFETY_THREAT_RE = re.compile(r"\b(harass|ragging|assault|threat|violence)\b", re.I)
-_LOST_FOUND_RE = re.compile(r"\b(stolen|theft|robbed|lost|missing|stole)\b", re.I)
-_TRANSPORT_RE = re.compile(
-    r"\b(bus|transport|overcrowd|overcrowded|crowded|unsafe|rush\s*hour|peak\s*hour)\b",
-    re.I,
-)
-_SCHOLARSHIP_CONTEXT_RE = re.compile(
-    r"\b(scholarship|financial\s*aid|stipend|bursary|fee\s*waiver|application\s*status)\b",
+_DISCIPLINE_RE = re.compile(
+    r"\b(ragging|harass|harassment|bully|bullying|fight|violence|assault|threat|"
+    r"stolen|theft|robbed|lost|missing|cheating|misconduct)\b",
     re.I,
 )
 
 
 def _is_real_exam_complaint(text: str) -> bool:
     t = text or ""
-    if _SCHOLARSHIP_CONTEXT_RE.search(t):
-        return False
     if _COURSE_REVIEW_RE.search(t) and not _EXAM_COMPLAINT_RE.search(t):
         return False
     return bool(_EXAM_COMPLAINT_RE.search(t))
@@ -202,55 +238,83 @@ def _is_exam_urgent_blocker(text: str) -> bool:
     return bool(_BLOCKER_RE.search(t) and _URGENCY_RE.search(t))
 
 
-def _is_hostel_water_outage(text: str) -> bool:
-    t = (text or "").lower()
-    if not _WATER_OUTAGE_RE.search(t):
-        return False
-    m = _DURATION_RE.search(t)
-    if not m:
-        return True
-    try:
-        days = int(m.group(1))
-    except ValueError:
-        return True
-    return days >= 1
+def _is_faculty_issue(text: str) -> bool:
+    return bool(_FACULTY_RE.search(text or ""))
 
 
-def _is_it_portal_issue(text: str) -> bool:
-    t = text or ""
-    has_it_channel = bool(_IT_PORTAL_RE.search(t))
-    has_failure = bool(_IT_FAILURE_RE.search(t))
-    if not (has_it_channel and has_failure):
-        return False
-    if _ACADEMIC_PROCESS_RE.search(t) and not re.search(
-        r"\b(server|login|error|failed|not\s*working|down|bug|timeout)\b", t, re.I
-    ):
-        return False
-    return True
+def _is_certificate_issue(text: str) -> bool:
+    return bool(_CERTIFICATE_RECORD_RE.search(text or ""))
 
 
-def _is_safety_threat(text: str) -> bool:
-    return bool(_SAFETY_THREAT_RE.search(text or ""))
-
-
-def _is_lost_found(text: str) -> bool:
-    return bool(_LOST_FOUND_RE.search(text or ""))
-
-
-def _mentions_hostel(text: str) -> bool:
-    return bool(re.search(r"\b(hostel|dorm|warden|roommate)\b", text or "", re.I))
-
-
-def _is_transport_issue(text: str) -> bool:
-    return bool(_TRANSPORT_RE.search(text or ""))
+def _is_discipline_issue(text: str) -> bool:
+    return bool(_DISCIPLINE_RE.search(text or ""))
 
 
 def _is_urgent(text: str) -> bool:
     return bool(_URGENCY_RE.search(text or ""))
 
 
-def _is_scholarship_issue(text: str) -> bool:
-    return bool(_SCHOLARSHIP_CONTEXT_RE.search(text or ""))
+def _apply_obvious_label_rule(text: str, current_label: str) -> str:
+    t = text or ""
+    if _is_real_exam_complaint(t):
+        return EXAM_OVERRIDE_LABEL_NAME
+    if _is_certificate_issue(t):
+        return CERTIFICATE_OVERRIDE_LABEL_NAME
+    if _is_discipline_issue(t):
+        return DISCIPLINE_OVERRIDE_LABEL_NAME
+    if _is_faculty_issue(t):
+        return FACULTY_OVERRIDE_LABEL_NAME
+    return current_label
+
+
+def _apply_obvious_priority_rule(text: str, current_label: str, current_priority: str) -> str:
+    t = (text or "").lower()
+    label = str(current_label or "")
+    priority = str(current_priority or "Medium")
+
+    high_signals = [
+        "marks affected",
+        "internal score",
+        "attendance shortage",
+        "unable to access",
+        "cannot access",
+        "blocked",
+        "scholarship amount",
+        "not credited",
+        "unsafe",
+        "harassment",
+        "ragging",
+        "threat",
+        "fumes",
+        "headache",
+    ]
+    medium_signals = [
+        "delay",
+        "repeated",
+        "keeps",
+        "again",
+        "for the past",
+        "still not resolved",
+        "inconvenience",
+        "frustrating",
+    ]
+    low_signals = [
+        "minor",
+        "occasionally",
+        "not a big issue",
+        "slightly",
+        "confusion",
+    ]
+
+    if any(signal in t for signal in high_signals):
+        return "High"
+    if label == "Examination" and any(signal in t for signal in ["hall ticket", "result", "revaluation", "miss exam"]):
+        return "High"
+    if any(signal in t for signal in medium_signals):
+        return "Medium"
+    if any(signal in t for signal in low_signals):
+        return "Low"
+    return priority
 
 
 _DEFAULT_PRIO_NAMES = {0: "Low", 1: "Medium", 2: "High"}
@@ -346,107 +410,94 @@ def predict_texts(texts):
     if isinstance(texts, str):
         texts = [texts]
 
-    with torch.no_grad():
-        enc = tokenizer(
-            texts,
-            padding=True,
-            truncation=True,
-            max_length=MAX_LENGTH,
-            return_tensors="pt",
-        ).to(device)
-        label_logits, prio_logits = model(**enc)
-        label_probs = torch.softmax(label_logits, dim=-1)
-        prio_probs = torch.softmax(prio_logits, dim=-1)
-        label_ids = label_probs.argmax(dim=1).cpu().tolist()
-        prio_ids = prio_probs.argmax(dim=1).cpu().tolist()
-        label_conf = label_probs.max(dim=1).values.cpu().tolist()
-        prio_conf = prio_probs.max(dim=1).values.cpu().tolist()
-
     results = []
     added_feedback = 0
-    for t, lid, lconf, pid, pconf in zip(texts, label_ids, label_conf, prio_ids, prio_conf):
-        label_name = id_to_label.get(int(lid), id_to_label.get(0, "Other"))
-        prio_name = _priority_name_from_id(int(pid))
-        label_low_conf = lconf < LABEL_THRESHOLD
-        prio_low_conf = pconf < PRIO_THRESHOLD
+    batch_size = max(PREDICT_BATCH_SIZE, 1)
+    with torch.no_grad():
+        for start in range(0, len(texts), batch_size):
+            batch_texts = texts[start : start + batch_size]
+            metadata_vectors = [
+                scale_feature_vector(
+                    feature_map_to_vector(
+                        build_metadata_feature_map(text=t),
+                        metadata_config.get("feature_names") if isinstance(metadata_config, dict) else None,
+                    ),
+                    metadata_config,
+                )
+                for t in batch_texts
+            ]
+            enc = tokenizer(
+                batch_texts,
+                padding=True,
+                truncation=True,
+                max_length=MAX_LENGTH,
+                return_tensors="pt",
+            ).to(device)
+            metadata_tensor = torch.tensor(metadata_vectors, dtype=torch.float32, device=device)
+            label_logits, prio_logits = model(**enc, metadata_features=metadata_tensor)
+            label_probs = torch.softmax(label_logits, dim=-1)
+            prio_probs = torch.softmax(prio_logits, dim=-1)
+            label_ids = label_probs.argmax(dim=1).cpu().tolist()
+            prio_ids = prio_probs.argmax(dim=1).cpu().tolist()
+            label_conf = label_probs.max(dim=1).values.cpu().tolist()
+            prio_conf = prio_probs.max(dim=1).values.cpu().tolist()
 
-        if ENABLE_HOSTEL_WATER_OVERRIDE and _is_hostel_water_outage(t) and _mentions_hostel(t):
-            label_name = HOSTEL_WATER_OVERRIDE_LABEL_NAME
-            label_low_conf = False
-        elif ENABLE_EXAM_LABEL_HEURISTIC and _is_real_exam_complaint(t):
-            label_name = EXAM_OVERRIDE_LABEL_NAME
-            label_low_conf = False
-        elif ENABLE_SCHOLARSHIP_LABEL_OVERRIDE and _is_scholarship_issue(t):
-            label_name = SCHOLARSHIP_OVERRIDE_LABEL_NAME
-            label_low_conf = False
-        elif ENABLE_TRANSPORT_PRIORITY_OVERRIDE and _is_transport_issue(t):
-            label_name = TRANSPORT_OVERRIDE_LABEL_NAME
-            label_low_conf = False
-        elif ENABLE_IT_PORTAL_OVERRIDE and _is_it_portal_issue(t):
-            label_name = IT_OVERRIDE_LABEL_NAME
-            label_low_conf = False
+            for t, lid, lconf, pid, pconf in zip(batch_texts, label_ids, label_conf, prio_ids, prio_conf):
+                label_name = id_to_label.get(int(lid), id_to_label.get(0, "Other"))
+                prio_name = _priority_name_from_id(int(pid))
+                label_low_conf = lconf < LABEL_THRESHOLD
+                prio_low_conf = pconf < PRIO_THRESHOLD
 
-        if ENABLE_LOST_FOUND_OVERRIDE and _is_lost_found(t):
-            label_name = LOST_FOUND_OVERRIDE_LABEL_NAME
-            label_low_conf = False
-        if ENABLE_RAGGING_LABEL_OVERRIDE and _is_safety_threat(t):
-            label_name = SAFETY_OVERRIDE_LABEL_NAME
-            label_low_conf = False
+                if ENABLE_EXAM_LABEL_HEURISTIC and _is_real_exam_complaint(t):
+                    label_name = EXAM_OVERRIDE_LABEL_NAME
+                    label_low_conf = False
+                elif ENABLE_CERTIFICATE_LABEL_HEURISTIC and _is_certificate_issue(t):
+                    label_name = CERTIFICATE_OVERRIDE_LABEL_NAME
+                    label_low_conf = False
+                elif ENABLE_DISCIPLINE_LABEL_HEURISTIC and _is_discipline_issue(t):
+                    label_name = DISCIPLINE_OVERRIDE_LABEL_NAME
+                    label_low_conf = False
+                elif ENABLE_FACULTY_LABEL_HEURISTIC and _is_faculty_issue(t):
+                    label_name = FACULTY_OVERRIDE_LABEL_NAME
+                    label_low_conf = False
 
-        if (
-            ENABLE_EXAM_URGENCY_OVERRIDE
-            and label_name == EXAM_OVERRIDE_LABEL_NAME
-            and not label_low_conf
-            and _is_exam_urgent_blocker(t)
-        ):
-            prio_name = "High"
-        if (
-            ENABLE_HOSTEL_WATER_OVERRIDE
-            and label_name == HOSTEL_WATER_OVERRIDE_LABEL_NAME
-            and not label_low_conf
-            and _is_hostel_water_outage(t)
-        ):
-            prio_name = "High"
-        if (
-            ENABLE_SAFETY_THREAT_OVERRIDE
-            and label_name == SAFETY_OVERRIDE_LABEL_NAME
-            and not label_low_conf
-            and _is_safety_threat(t)
-        ):
-            prio_name = "High"
-        if ENABLE_IT_PRIORITY_OVERRIDE and label_name == IT_OVERRIDE_LABEL_NAME and _is_it_portal_issue(t):
-            prio_name = "Medium"
-        if (
-            ENABLE_SCHOLARSHIP_URGENCY_OVERRIDE
-            and label_name == SCHOLARSHIP_OVERRIDE_LABEL_NAME
-            and _is_urgent(t)
-        ):
-            prio_name = "High"
-        if ENABLE_TRANSPORT_PRIORITY_OVERRIDE and label_name == TRANSPORT_OVERRIDE_LABEL_NAME and _is_transport_issue(t):
-            prio_name = "Medium"
+                # Always allow a few obvious-text corrections as conservative post-rules.
+                label_name = _apply_obvious_label_rule(t, label_name)
 
-        if prio_low_conf and prio_name not in {"High", "Medium", "Low"}:
-            prio_name = "Medium"
-        if ENFORCE_UNKNOWN_PRIORITY_IF_UNKNOWN_LABEL and label_low_conf:
-            prio_name = "Medium"
+                if (
+                    ENABLE_EXAM_URGENCY_OVERRIDE
+                    and label_name == EXAM_OVERRIDE_LABEL_NAME
+                    and not label_low_conf
+                    and _is_exam_urgent_blocker(t)
+                ):
+                    prio_name = "High"
+                if ENABLE_DISCIPLINE_PRIORITY_OVERRIDE and label_name == DISCIPLINE_OVERRIDE_LABEL_NAME:
+                    prio_name = "High"
 
-        final_label_id = label_to_id.get(label_name, int(lid))
-        final_prio_id = priority_to_id.get(prio_name, int(pid))
-        added_feedback += int(
-            _append_pseudo_feedback(
-                t, final_label_id, final_prio_id, float(lconf), float(pconf)
-            )
-        )
+                prio_name = _apply_obvious_priority_rule(t, label_name, prio_name)
 
-        results.append(
-            {
-                "text": t,
-                "label": label_name,
-                "label_confidence": float(lconf),
-                "priority": prio_name,
-                "priority_confidence": float(pconf),
-            }
-        )
+                if prio_low_conf and prio_name not in {"High", "Medium", "Low"}:
+                    prio_name = "Medium"
+                if ENFORCE_UNKNOWN_PRIORITY_IF_UNKNOWN_LABEL and label_low_conf:
+                    prio_name = "Medium"
+
+                final_label_id = label_to_id.get(label_name, int(lid))
+                final_prio_id = priority_to_id.get(prio_name, int(pid))
+                added_feedback += int(
+                    _append_pseudo_feedback(
+                        t, final_label_id, final_prio_id, float(lconf), float(pconf)
+                    )
+                )
+
+                results.append(
+                    {
+                        "text": t,
+                        "label": label_name,
+                        "label_confidence": float(lconf),
+                        "priority": prio_name,
+                        "priority_confidence": float(pconf),
+                    }
+                )
 
     if added_feedback > 0:
         _maybe_auto_retrain()
@@ -455,6 +506,15 @@ def predict_texts(texts):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Predict complaint category and priority.")
+    parser.add_argument(
+        "--text",
+        type=str,
+        default="",
+        help="Single complaint text to classify. If omitted, built-in sample texts are used.",
+    )
+    args = parser.parse_args()
+
     texts = [
         """I submitted my assignment on time through the portal but the faculty marked it as late submission.
         I even have the confirmation screenshot showing successful upload. Because of this, my marks are affected
@@ -502,6 +562,8 @@ if __name__ == "__main__":
         Students who reserve rooms are unable to use them at scheduled times.
         A proper booking enforcement system is required to resolve this issue.""",
     ]
+    if args.text.strip():
+        texts = [args.text.strip()]
 
     preds = predict_texts(texts)
     for r in preds:

@@ -680,6 +680,47 @@ const Admin = () => {
               </div>
             )}
 
+            {analytics && (
+              <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Explainability Signals</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm">
+                    {analytics.explainability_summary.top_rationales.length ? (
+                      analytics.explainability_summary.top_rationales.map((item) => (
+                        <div key={item.feature} className="flex items-center justify-between rounded-xl border bg-muted/10 px-3 py-2">
+                          <span>{item.feature.replace(/_/g, " ")}</span>
+                          <strong>{item.count}</strong>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-muted-foreground">Rationale summaries will appear as new AI-reviewed complaints are analyzed.</p>
+                    )}
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Fairness Group Monitor</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm">
+                    {(analytics.fairness_summary.group_breakdown.language ?? []).slice(0, 4).map((item) => (
+                      <div key={item.group} className="rounded-xl border bg-muted/10 px-3 py-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <span>{item.group}</span>
+                          <strong>{item.count}</strong>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">Human review cases: {item.human_review_count}</p>
+                      </div>
+                    ))}
+                    {!(analytics.fairness_summary.group_breakdown.language ?? []).length && (
+                      <p className="text-muted-foreground">Group-level monitoring will appear once complaint analysis accumulates.</p>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Recent Audit Trail</CardTitle>

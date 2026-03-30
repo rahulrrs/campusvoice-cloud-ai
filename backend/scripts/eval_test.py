@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -13,11 +14,17 @@ from transformers import AutoModel, AutoTokenizer, DataCollatorWithPadding
 
 # ========= CONFIG =========
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.utils.complaint_ml import build_metadata_feature_map, feature_map_to_vector, scale_feature_vector
+from src.utils.model_paths import load_project_env, resolve_backbone_source
+
 MODEL_DIR = PROJECT_ROOT / "outputs" / "edu_classifier_multitask"
 TEST_PATH = PROJECT_ROOT / "data" / "test.csv"
 BATCH = 32
 MAX_LENGTH = 256
-FALLBACK_MODEL = "distilbert-base-uncased"
+load_project_env(PROJECT_ROOT)
 # ==========================
 
 print("Loading:", TEST_PATH)
@@ -46,9 +53,28 @@ with open(prio_map_path, "r", encoding="utf-8") as file:
 num_labels = len(id_to_label)
 num_priority = len(id_to_priority)
 
-tokenizer_src = MODEL_DIR if os.path.exists(os.path.join(MODEL_DIR, "tokenizer_config.json")) else FALLBACK_MODEL
+fallback_model = os.getenv("BACKBONE_MODEL_NAME", "roberta-base")
+tokenizer_src = MODEL_DIR if os.path.exists(os.path.join(MODEL_DIR, "tokenizer_config.json")) else fallback_model
 print("Loading tokenizer from:", tokenizer_src)
 tokenizer = AutoTokenizer.from_pretrained(tokenizer_src)
+
+metadata_config_path = MODEL_DIR / "metadata_config.json"
+metadata_config = None
+if metadata_config_path.exists():
+    with open(metadata_config_path, "r", encoding="utf-8") as file:
+        metadata_config = json.load(file)
+
+test_df = test_df.copy()
+test_df["metadata_features"] = [
+    scale_feature_vector(
+        feature_map_to_vector(
+            build_metadata_feature_map(text=str(text)),
+            metadata_config.get("feature_names") if isinstance(metadata_config, dict) else None,
+        ),
+        metadata_config,
+    )
+    for text in test_df["text"].astype(str).tolist()
+]
 
 
 def tok_fn(batch):
@@ -61,33 +87,68 @@ test_ds = test_ds.map(tok_fn, batched=True, remove_columns=["text"])
 collator = DataCollatorWithPadding(tokenizer)
 loader = DataLoader(test_ds, batch_size=BATCH, collate_fn=collator)
 
-backbone_src = MODEL_DIR if os.path.exists(os.path.join(MODEL_DIR, "config.json")) else FALLBACK_MODEL
+backbone_src, backbone_note = resolve_backbone_source(PROJECT_ROOT, MODEL_DIR)
+if backbone_note:
+    print(backbone_note)
 print("Loading backbone from:", backbone_src)
 
 
-class DistilBertMultiTask(nn.Module):
-    def __init__(self, model_name: str, num_labels: int, num_priority: int):
+class EncoderMultiTask(nn.Module):
+    def __init__(
+        self,
+        model_name: str,
+        num_labels: int,
+        num_priority: int,
+        label_metadata_dim: int = 0,
+        priority_metadata_dim: int = 0,
+    ):
         super().__init__()
         self.backbone = AutoModel.from_pretrained(model_name)
         hidden = self.backbone.config.hidden_size
+        self.label_metadata_dim = label_metadata_dim
+        self.priority_metadata_dim = priority_metadata_dim
         self.dropout = nn.Dropout(0.1)
         self.label_dropout = nn.Dropout(0.2)
         self.prio_dropout = nn.Dropout(0.2)
         self.act = nn.GELU()
+        if label_metadata_dim > 0:
+            self.label_meta_proj = nn.Sequential(
+                nn.Linear(label_metadata_dim, hidden),
+                nn.LayerNorm(hidden),
+                nn.GELU(),
+                nn.Dropout(0.1),
+            )
+        else:
+            self.label_meta_proj = None
         self.label_hidden = nn.Linear(hidden, hidden // 2)
         self.label_head = nn.Linear(hidden // 2, num_labels)
-        self.prio_hidden = nn.Linear(hidden, hidden // 4)
+        if priority_metadata_dim > 0:
+            self.priority_meta_proj = nn.Sequential(
+                nn.Linear(priority_metadata_dim, hidden // 4),
+                nn.LayerNorm(hidden // 4),
+                nn.GELU(),
+                nn.Dropout(0.1),
+            )
+            prio_input = hidden + (hidden // 4)
+        else:
+            self.priority_meta_proj = None
+            prio_input = hidden
+        self.prio_hidden = nn.Linear(prio_input, hidden // 4)
         self.prio_head = nn.Linear(hidden // 4, num_priority)
 
-    def forward(self, input_ids=None, attention_mask=None, **kwargs):
+    def forward(self, input_ids=None, attention_mask=None, metadata_features=None, **kwargs):
         out = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
         pooled = self.dropout(out.last_hidden_state[:, 0])
-        label_logits = self.label_head(self.act(self.label_hidden(self.label_dropout(pooled))))
-        prio_logits = self.prio_head(self.act(self.prio_hidden(self.prio_dropout(pooled))))
+        label_input = pooled
+        if self.label_metadata_dim > 0 and metadata_features is not None:
+            label_input = label_input + self.label_meta_proj(metadata_features.float())
+        label_logits = self.label_head(self.act(self.label_hidden(self.label_dropout(label_input))))
+        priority_input = pooled
+        if self.priority_metadata_dim > 0 and metadata_features is not None:
+            priority_input = torch.cat([priority_input, self.priority_meta_proj(metadata_features.float())], dim=-1)
+        prio_logits = self.prio_head(self.act(self.prio_hidden(self.prio_dropout(priority_input))))
         return label_logits, prio_logits
 
-
-model = DistilBertMultiTask(backbone_src, num_labels, num_priority)
 
 weights_safetensors = os.path.join(MODEL_DIR, "model.safetensors")
 weights_bin = os.path.join(MODEL_DIR, "pytorch_model.bin")
@@ -105,9 +166,19 @@ else:
         f"Missing model weights in {MODEL_DIR} (expected model.safetensors or pytorch_model.bin)"
     )
 
-for key in ("label_weights", "priority_weights"):
+for key in ("label_weights", "priority_weights", "priority_cost_matrix"):
     state_dict.pop(key, None)
 
+metadata_dim = len(metadata_config.get("feature_names", [])) if isinstance(metadata_config, dict) else 0
+has_label_metadata_layers = any(key.startswith("label_meta_proj.") for key in state_dict)
+has_metadata_layers = any(key.startswith("priority_meta_proj.") for key in state_dict)
+model = EncoderMultiTask(
+    backbone_src,
+    num_labels,
+    num_priority,
+    label_metadata_dim=metadata_dim if has_label_metadata_layers else 0,
+    priority_metadata_dim=metadata_dim if has_metadata_layers else 0,
+)
 model.load_state_dict(state_dict, strict=True)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -126,8 +197,14 @@ with torch.no_grad():
         input_ids = batch["input_ids"].to(device)
         attention_mask = batch.get("attention_mask")
         attention_mask = attention_mask.to(device) if attention_mask is not None else None
+        metadata_features = batch.get("metadata_features")
+        metadata_features = metadata_features.to(device) if metadata_features is not None else None
 
-        label_logits, prio_logits = model(input_ids=input_ids, attention_mask=attention_mask)
+        label_logits, prio_logits = model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            metadata_features=metadata_features,
+        )
 
         y_label_true.extend(labels)
         y_prio_true.extend(prios)

@@ -7,10 +7,18 @@ from sklearn.model_selection import train_test_split
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 
-FILE_PATH = DATA_DIR / "dataset_clean.csv"
+FILE_PATH = Path(os.getenv("DATASET_SPLIT_SOURCE", str(DATA_DIR / "dataset_clean.csv")))
 OUT_TRAIN = DATA_DIR / "train.csv"
 OUT_VAL = DATA_DIR / "val.csv"
 OUT_TEST = DATA_DIR / "test.csv"
+TRAIN_RATIO = float(os.getenv("TRAIN_RATIO", "0.80"))
+VAL_RATIO = float(os.getenv("VAL_RATIO", "0.10"))
+TEST_RATIO = float(os.getenv("TEST_RATIO", "0.10"))
+
+if min(TRAIN_RATIO, VAL_RATIO, TEST_RATIO) <= 0:
+    raise ValueError("TRAIN_RATIO, VAL_RATIO, and TEST_RATIO must all be > 0")
+if abs((TRAIN_RATIO + VAL_RATIO + TEST_RATIO) - 1.0) > 1.0e-9:
+    raise ValueError("TRAIN_RATIO + VAL_RATIO + TEST_RATIO must equal 1.0")
 
 df = pd.read_csv(FILE_PATH, low_memory=False)
 print("Original rows:", len(df))
@@ -45,7 +53,7 @@ df["_strat"] = strat_col.values
 
 train_df, temp_df = train_test_split(
     df,
-    test_size=0.30,
+    test_size=(1.0 - TRAIN_RATIO),
     stratify=df["_strat"],
     random_state=42,
 )
@@ -62,9 +70,11 @@ else:
 temp_df = temp_df.copy()
 temp_df["_strat"] = val_strat.values
 
+temp_test_ratio = TEST_RATIO / (VAL_RATIO + TEST_RATIO)
+
 val_df, test_df = train_test_split(
     temp_df,
-    test_size=0.50,
+    test_size=temp_test_ratio,
     stratify=temp_df["_strat"],
     random_state=42,
 )
@@ -78,6 +88,9 @@ val_df.to_csv(OUT_VAL, index=False)
 test_df.to_csv(OUT_TEST, index=False)
 
 print("\nSplit completed")
+print(
+    f"Ratios used -> train: {TRAIN_RATIO:.2f}, val: {VAL_RATIO:.2f}, test: {TEST_RATIO:.2f}"
+)
 print(f"Train:      {len(train_df)}")
 print(f"Validation: {len(val_df)}")
 print(f"Test:       {len(test_df)}")
@@ -88,6 +101,8 @@ print(train_df["label"].value_counts().to_string())
 for split_name, split_df in [("Train", train_df), ("Val", val_df), ("Test", test_df)]:
     print(f"\n{split_name} priority distribution ({PRIO_COL}):")
     print(split_df[PRIO_COL].value_counts().sort_index().to_string())
+    print(f"\n{split_name} category x priority:")
+    print(pd.crosstab(split_df["label"], split_df[PRIO_COL]).to_string())
 
 print("\nExamination rows")
 for split_name, split_df in [("Train", train_df), ("Val", val_df), ("Test", test_df)]:

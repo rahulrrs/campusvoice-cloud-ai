@@ -255,6 +255,23 @@ const AdminComplaintQueue = ({
                           </div>
                         )}
 
+                        {analysisToShow?.explainability && (
+                          <div className="rounded-xl border bg-background p-4 text-sm">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Explainability</p>
+                            <p className="mt-3 text-foreground">{analysisToShow.explainability.summary}</p>
+                            {analysisToShow.explainability.rationale_items.length > 0 && (
+                              <div className="mt-3 space-y-2">
+                                {analysisToShow.explainability.rationale_items.map((item, index) => (
+                                  <div key={`${item.feature}-${index}`} className="rounded-lg border bg-muted/10 px-3 py-2">
+                                    <p className="font-medium text-foreground">{item.feature.replace(/_/g, " ")}</p>
+                                    <p className="text-xs text-muted-foreground">{item.reason}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         {(complaint.fairness_flags?.length ?? 0) > 0 && (
                           <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-4 text-sm text-sky-950">
                             <p className="font-semibold">Fairness watch</p>
@@ -297,6 +314,20 @@ const AdminComplaintQueue = ({
                       </TabsContent>
 
                       <TabsContent value="evidence" className="space-y-4">
+                        {analysisToShow?.multimodal_evidence && (
+                          <div className="rounded-xl border bg-background p-4 text-sm">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Evidence understanding</p>
+                            <div className="mt-3 space-y-2">
+                              <p><strong>Summary:</strong> {analysisToShow.multimodal_evidence.summary}</p>
+                              <p><strong>Modalities:</strong> {analysisToShow.multimodal_evidence.available_modalities.join(", ") || "metadata only"}</p>
+                              {analysisToShow.multimodal_evidence.extracted_text ? (
+                                <p className="whitespace-pre-line text-muted-foreground">
+                                  <strong className="text-foreground">Extracted text:</strong> {analysisToShow.multimodal_evidence.extracted_text}
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+                        )}
                         {Array.isArray(complaint.attachments) && complaint.attachments.length > 0 ? (
                           <div className="rounded-xl border bg-background p-4 space-y-3">
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

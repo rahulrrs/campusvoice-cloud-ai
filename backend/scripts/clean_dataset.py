@@ -18,15 +18,15 @@ INPUT_CANDIDATES = [
 ]
 OUT_PATH = DATA_DIR / "dataset_clean.csv"
 OUT_DIR = OUTPUTS_DIR
-MIN_WORDS = 5
+MIN_WORDS = 3
 
 DEFAULT_PRIORITY_ID = 1  # 0=Low, 1=Medium, 2=High
 
 # Label-noise fix: reclassify course-review texts under "Examination" -> "Academic"
-FIX_EXAM_LABEL_NOISE = True
+FIX_EXAM_LABEL_NOISE = False
 
 # Synthetic augmentation for underrepresented High-priority exam complaints
-AUGMENT_EXAM_HIGH = True
+AUGMENT_EXAM_HIGH = False
 # ===========================================
 
 _URGENCY_RE = re.compile(
@@ -120,6 +120,10 @@ def _is_hostel_water_outage(text: str) -> bool:
 
 def safe_strip(series: pd.Series) -> pd.Series:
     return series.astype(str).str.strip()
+
+
+def strip_outer_quotes(series: pd.Series) -> pd.Series:
+    return series.astype(str).str.strip().str.replace(r'^"(.*)"$', r"\1", regex=True)
 
 
 def resolve_input_path() -> Path:
@@ -244,14 +248,14 @@ def main():
             "Missing priority column: expected one of priority_id_fixed, priority, priority_fixed"
         )
 
-    df["text"] = df["text"].astype(str).str.replace(r"\s+", " ", regex=True).str.strip()
+    df["text"] = strip_outer_quotes(df["text"]).str.replace(r"\s+", " ", regex=True).str.strip()
     df["label"] = safe_strip(df["label"])
 
     if "label_id" not in df.columns:
-        print("label_id column not found. Generating label IDs from label values.")
-        df["label_id"] = (
-            pd.Categorical(df["label"].astype(str).str.strip(), ordered=True).codes.astype(int)
-        )
+        print("label_id column not found. Generating label IDs from sorted label values.")
+        label_names = sorted(df["label"].astype(str).str.strip().unique().tolist())
+        label_to_id = {label: idx for idx, label in enumerate(label_names)}
+        df["label_id"] = df["label"].map(label_to_id).astype(int)
 
     if "priority_fixed" in df.columns:
         df["priority_fixed"] = safe_strip(df["priority_fixed"])
@@ -378,6 +382,8 @@ def main():
     print(df["label"].value_counts().to_string())
     print("\nFinal priority distribution:")
     print(df["priority_id_fixed"].value_counts().sort_index().to_string())
+    print("\nFinal category x priority table:")
+    print(pd.crosstab(df["label"], df["priority_id_fixed"]).to_string())
     print(
         f"\nExamination + High rows: {len(df[(df['label'] == 'Examination') & (df['priority_id_fixed'] == 2)])}"
     )

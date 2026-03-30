@@ -20,6 +20,14 @@ except Exception:
 
 
 ROOT = Path(__file__).resolve().parents[1]
+import sys
+
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.utils.model_paths import load_project_env, resolve_backbone_source
+
+load_project_env(ROOT)
 TRAIN_PATH = ROOT / "data" / "train.csv"
 TEST_PATH = ROOT / "data" / "test.csv"
 MODEL_DIR = ROOT / "outputs" / "edu_classifier_multitask"
@@ -71,7 +79,7 @@ def _run_linear_svm(train_df: pd.DataFrame, test_df: pd.DataFrame) -> dict[str, 
     return _metrics(test_df["label_id"].to_numpy(), pred)
 
 
-def _run_distilbert(train_df: pd.DataFrame, test_df: pd.DataFrame) -> dict[str, float] | None:
+def _run_roberta(train_df: pd.DataFrame, test_df: pd.DataFrame) -> dict[str, float] | None:
     if torch is None or AutoModel is None or AutoTokenizer is None:
         return None
     if not (MODEL_DIR / "model.safetensors").exists():
@@ -83,11 +91,12 @@ def _run_distilbert(train_df: pd.DataFrame, test_df: pd.DataFrame) -> dict[str, 
         id_to_label = {int(k): v for k, v in json.load(f).items()}
     num_labels = len(id_to_label)
 
-    tok_src = str(MODEL_DIR if (MODEL_DIR / "tokenizer_config.json").exists() else "distilbert-base-uncased")
-    backbone_src = str(MODEL_DIR if (MODEL_DIR / "config.json").exists() else "distilbert-base-uncased")
+    fallback_model = os.getenv("BACKBONE_MODEL_NAME", "roberta-base")
+    tok_src = str(MODEL_DIR if (MODEL_DIR / "tokenizer_config.json").exists() else fallback_model)
+    backbone_src, _ = resolve_backbone_source(ROOT, MODEL_DIR)
     tokenizer = AutoTokenizer.from_pretrained(tok_src)
 
-    class DistilLabelOnly(torch.nn.Module):
+    class EncoderLabelOnly(torch.nn.Module):
         def __init__(self, model_name: str, out_dim: int):
             super().__init__()
             self.backbone = AutoModel.from_pretrained(model_name)
@@ -103,7 +112,7 @@ def _run_distilbert(train_df: pd.DataFrame, test_df: pd.DataFrame) -> dict[str, 
             pooled = self.dropout(out.last_hidden_state[:, 0])
             return self.label_head(self.act(self.label_hidden(self.label_dropout(pooled))))
 
-    model = DistilLabelOnly(backbone_src, num_labels)
+    model = EncoderLabelOnly(backbone_src, num_labels)
     from safetensors.torch import load_file
 
     state = load_file(str(MODEL_DIR / "model.safetensors"), device="cpu")
@@ -142,7 +151,7 @@ def main() -> None:
         "models": {
             "logistic_regression": _run_logistic_regression(train_df, test_df),
             "linear_svm": _run_linear_svm(train_df, test_df),
-            "distilbert_finetuned": _run_distilbert(train_df, test_df),
+            "roberta_finetuned": _run_roberta(train_df, test_df),
         },
     }
 
