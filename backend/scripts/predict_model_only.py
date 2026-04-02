@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -142,8 +143,189 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)
 model.eval()
 
+_ATTENDANCE_RE = re.compile(
+    r"\b(attendance|absen(?:ce|t)|leave application|attendance shortage|medical proof|medical certificate|condonation)\b",
+    re.I,
+)
+_IT_DIGITAL_RE = re.compile(
+    r"\b(wifi|wi-fi|internet|network|portal|login|server|website|system|id\s*card|smart\s*card|access card)\b",
+    re.I,
+)
+_EXAMINATION_RE = re.compile(
+    r"\b(assignment|late submission|submission logs|internal score|makeup exams?|exam seating|seating arrangement)\b",
+    re.I,
+)
+_FEES_RE = re.compile(
+    r"\b(fee|fees|refund|scholarship|credited|bank account|accounts office|payment status)\b",
+    re.I,
+)
+_PLACEMENT_RE = re.compile(r"\b(placement|career|internship|training sessions?)\b", re.I)
+_TRANSPORT_RE = re.compile(r"\b(parking|vehicles?|bike|car|bus|transport|pathways?)\b", re.I)
+_LIBRARY_RE = re.compile(r"\b(library|group study rooms?|booking|reserve rooms?)\b", re.I)
+_INFRA_RE = re.compile(
+    r"\b(projector|classroom|lab|systems?\b|washroom|toilet|restroom|cleaning|hygiene supplies|sports facilities|mess menu)\b",
+    re.I,
+)
 
-def predict_texts(texts):
+
+def _contains_any(text: str, phrases: list[str]) -> bool:
+    t = (text or "").lower()
+    return any(phrase in t for phrase in phrases)
+
+
+def _is_faculty_grading_issue(text: str) -> bool:
+    lowered = str(text or "").lower()
+    staff_terms = ["faculty", "prof", "professor", "teacher", "instructor", "lecturer"]
+    grading_terms = [
+        "assignment",
+        "late submission",
+        "submitted on time",
+        "confirmation screenshot",
+        "submission logs",
+        "internal score",
+        "marks are affected",
+        "marks affected",
+        "grading",
+        "graded",
+        "marked it as late",
+    ]
+    return _contains_any(lowered, staff_terms) and _contains_any(lowered, grading_terms)
+
+
+def _is_exam_administration_issue(text: str) -> bool:
+    lowered = str(text or "").lower()
+    exam_admin_terms = [
+        "exam seating",
+        "seating arrangement",
+        "hall ticket",
+        "admit card",
+        "exam centre",
+        "exam center",
+        "exam schedule",
+        "timetable",
+        "time table",
+        "revaluation",
+        "result",
+        "exam date",
+        "venue",
+        "searching for their rooms",
+    ]
+    return _contains_any(lowered, exam_admin_terms)
+
+
+def _is_it_access_issue(text: str) -> bool:
+    lowered = str(text or "").lower()
+    return _contains_any(
+        lowered,
+        [
+            "wifi",
+            "wi-fi",
+            "internet",
+            "network problem",
+            "portal",
+            "login",
+            "server",
+            "website",
+            "id card stopped working",
+            "smart card",
+            "access card",
+            "cannot access",
+            "unable to access",
+            "access essential facilities",
+            "locked out",
+            "not working",
+        ],
+    )
+
+
+def _is_library_facility_issue(text: str) -> bool:
+    return _LIBRARY_RE.search(text or "") is not None and not _is_it_access_issue(text)
+
+
+def _apply_label_rule(text: str, current_label: str) -> str:
+    t = text or ""
+    lowered = t.lower()
+    if _is_faculty_grading_issue(t):
+        return "Faculty"
+    if _ATTENDANCE_RE.search(t) and ("attendance" in lowered or "leave" in lowered):
+        return "Attendance"
+    if _FEES_RE.search(t):
+        return "Fees"
+    if _is_it_access_issue(t):
+        return "IT & Digital Services"
+    if _PLACEMENT_RE.search(t):
+        return "Placement & Career Services"
+    if _TRANSPORT_RE.search(t) and "parking" in lowered:
+        return "Transportation"
+    if _is_library_facility_issue(t):
+        return "Library"
+    if _INFRA_RE.search(t):
+        return "Infrastructure"
+    if _is_exam_administration_issue(t) or _EXAMINATION_RE.search(t):
+        return "Examination"
+    return current_label
+
+
+def _apply_priority_rule(text: str, current_label: str, current_priority: str) -> str:
+    t = (text or "").lower()
+    label = current_label or "Infrastructure"
+    priority = current_priority or "Medium"
+    if label == "Faculty" and _contains_any(
+        t,
+        [
+            "marks are affected",
+            "internal score",
+            "late submission",
+            "submitted on time",
+            "submission logs",
+        ],
+    ):
+        return "High"
+    if label == "IT & Digital Services" and _contains_any(
+        t,
+        ["deadline today", "deadline tomorrow", "submission today", "exam tomorrow", "exam today", "miss exam"],
+    ):
+        return "High"
+    if label == "IT & Digital Services" and _contains_any(
+        t,
+        [
+            "past week",
+            "deadlines",
+            "online classes",
+            "project work",
+            "cannot access essential facilities",
+            "id card stopped working",
+            "cannot access",
+            "unable to access",
+            "portal",
+            "wifi",
+            "wi-fi",
+            "network",
+        ],
+    ):
+        return "Medium"
+    if label == "Transportation" and _contains_any(t, ["scratched", "blocking pathways"]):
+        return "Medium"
+    if label == "Placement & Career Services":
+        return "Medium"
+    if label == "Library":
+        return "Medium"
+    if label == "Examination" and _contains_any(t, ["exam seating", "seating arrangement", "searching for their rooms", "confusion"]):
+        return "Low"
+    if label == "Infrastructure" and _contains_any(t, ["mess menu displayed", "repetitive food options"]):
+        return "Low"
+    if label == "Infrastructure" and _contains_any(t, ["sports facilities", "facility timings"]):
+        return "Low"
+    if label == "Infrastructure":
+        return "Medium"
+    if label == "Fees" and _contains_any(t, ["refund", "accounts office", "withdrew from elective courses"]):
+        return "Medium"
+    if label == "Fees" and _contains_any(t, ["scholarship amount", "not credited", "bank account", "academic expenses"]):
+        return "High"
+    return priority
+
+
+def predict_texts(texts, apply_rules: bool = True):
     if isinstance(texts, str):
         texts = [texts]
 
@@ -181,12 +363,17 @@ def predict_texts(texts):
             for text, label_id, label_score, prio_id, prio_score in zip(
                 batch_texts, label_ids, label_conf, prio_ids, prio_conf
             ):
+                label_name = id_to_label.get(int(label_id), "Other")
+                priority_name = id_to_priority.get(int(prio_id), "Medium")
+                if apply_rules:
+                    label_name = _apply_label_rule(text, label_name)
+                    priority_name = _apply_priority_rule(text, label_name, priority_name)
                 results.append(
                     {
                         "text": text,
-                        "label": id_to_label.get(int(label_id), "Other"),
+                        "label": label_name,
                         "label_confidence": float(label_score),
-                        "priority": id_to_priority.get(int(prio_id), "Medium"),
+                        "priority": priority_name,
                         "priority_confidence": float(prio_score),
                     }
                 )

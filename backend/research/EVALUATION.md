@@ -49,3 +49,19 @@ The current evaluation is designed to surface disparities for review rather than
 - `f1_macro`
 
 These metrics support baseline comparison and error analysis for category classification.
+
+## Duplicate retrieval sanity check
+
+Run:
+
+```bash
+python scripts/evaluate_duplicates.py
+```
+
+This generates `outputs/duplicate_eval.json` with:
+
+- `precision_at_1`
+- `positive_recall_at_threshold`
+- `threshold_accuracy`
+
+The duplicate report is a preliminary sanity benchmark built from high-overlap, non-identical complaint pairs mined from the current dataset. It is useful for paper reporting and regression checks, but it should not be described as a large human-annotated duplicate benchmark.

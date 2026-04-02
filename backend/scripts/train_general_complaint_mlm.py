@@ -4,6 +4,7 @@ import random
 import inspect
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -17,29 +18,29 @@ from transformers import (
     TrainingArguments,
 )
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
-SOURCE_MODEL_DIR = r"outputs\general_complaint_model"
+SOURCE_MODEL_DIR = str(PROJECT_ROOT / "outputs" / "general_complaint_model")
 FALLBACK_SOURCE_MODEL = os.getenv("BACKBONE_MODEL_NAME", "roberta-base")
 OUTPUT_DIR = SOURCE_MODEL_DIR
 
-PRIMARY_DATA_PATH = r"data\dataset_clean.csv"
+PRIMARY_DATA_PATH = str(PROJECT_ROOT / "data" / "dataset_clean.csv")
 OPTIONAL_DATA_PATHS = [
-    r"data\train.csv",
-    r"data\val.csv",
-    r"data\pseudo_feedback.csv",
-    r"data\frontend_feedback.csv",
+    str(PROJECT_ROOT / "data" / "train.csv"),
+    str(PROJECT_ROOT / "data" / "val.csv"),
+    str(PROJECT_ROOT / "data" / "pseudo_feedback.csv"),
+    str(PROJECT_ROOT / "data" / "frontend_feedback.csv"),
 ]
 GENERAL_DOMAIN_DATA_PATHS = [
-    r"data\complaint.csv",
-    r"data\complaints.csv",
+    str(PROJECT_ROOT / "data" / "complaint.csv"),
+    str(PROJECT_ROOT / "data" / "complaints.csv"),
 ]
 STRICT_NARRATIVE_ONLY_PATHS = {
-    r"data\complaint.csv",
-    r"data\complaints.csv",
+    str(PROJECT_ROOT / "data" / "complaint.csv"),
+    str(PROJECT_ROOT / "data" / "complaints.csv"),
 }
 
 TEXT_COLUMN_CANDIDATES = (
@@ -55,30 +56,59 @@ FALLBACK_TEXT_BUILD_COLUMNS = (
     "issue",
     "sub-issue",
 )
+
+
+def env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or not str(raw).strip():
+        return default
+    return int(str(raw).strip())
+
+
+def env_optional_int(name: str, default: int | None) -> int | None:
+    raw = os.getenv(name)
+    if raw is None or not str(raw).strip():
+        return default
+    value = str(raw).strip().lower()
+    if value in {"none", "null", "all", "full", "-1", "unlimited"}:
+        return None
+    return int(value)
+
+
+def env_choice(name: str, default: str, allowed: set[str]) -> str:
+    raw = os.getenv(name)
+    value = (str(raw).strip().lower() if raw is not None else default).strip().lower()
+    if value not in allowed:
+        return default
+    return value
+
+
 MAX_ROWS_BY_SOURCE = {
-    PRIMARY_DATA_PATH: None,
-    r"data\train.csv": 50000,
-    r"data\val.csv": 10000,
-    r"data\pseudo_feedback.csv": 5000,
-    r"data\frontend_feedback.csv": 5000,
-    r"data\complaint.csv": 10000,
-    r"data\complaints.csv": 10000,
+    PRIMARY_DATA_PATH: env_optional_int("MLM_MAX_ROWS_PRIMARY", None),
+    str(PROJECT_ROOT / "data" / "train.csv"): env_optional_int("MLM_MAX_ROWS_TRAIN", 50000),
+    str(PROJECT_ROOT / "data" / "val.csv"): env_optional_int("MLM_MAX_ROWS_VAL", 10000),
+    str(PROJECT_ROOT / "data" / "pseudo_feedback.csv"): env_optional_int("MLM_MAX_ROWS_PSEUDO_FEEDBACK", 5000),
+    str(PROJECT_ROOT / "data" / "frontend_feedback.csv"): env_optional_int("MLM_MAX_ROWS_FRONTEND_FEEDBACK", 5000),
+    str(PROJECT_ROOT / "data" / "complaint.csv"): env_optional_int("MLM_MAX_ROWS_COMPLAINT", None),
+    str(PROJECT_ROOT / "data" / "complaints.csv"): env_optional_int("MLM_MAX_ROWS_COMPLAINTS", None),
 }
 CHUNKED_READ_THRESHOLD_BYTES = 100 * 1024 * 1024
 CHUNK_SIZE = 50000
 
-MAX_LENGTH = 256
+MAX_LENGTH = env_int("MLM_MAX_LENGTH", 256)
 TRAIN_FRACTION = 0.9
 MLM_PROBABILITY = 0.15
 SEED = 42
-EPOCHS = 1
-TRAIN_BATCH_SIZE = 8
-EVAL_BATCH_SIZE = 8
-LEARNING_RATE = 2e-5
+EPOCHS = env_int("MLM_EPOCHS", 2)
+TRAIN_BATCH_SIZE = env_int("MLM_TRAIN_BATCH_SIZE", 8)
+EVAL_BATCH_SIZE = env_int("MLM_EVAL_BATCH_SIZE", 8)
+LEARNING_RATE = float(os.getenv("MLM_LEARNING_RATE", "2e-5"))
 WEIGHT_DECAY = 0.01
 WARMUP_RATIO = 0.1
 SAVE_TOTAL_LIMIT = 2
 LOGGING_STEPS = 100
+SAMPLING_MODE = env_choice("MLM_SAMPLING_MODE", "head", {"head", "reservoir"})
+RESERVOIR_SCAN_MAX_ROWS = env_optional_int("MLM_RESERVOIR_SCAN_MAX_ROWS", None)
 
 
 def set_seed(seed: int) -> None:
@@ -255,6 +285,8 @@ def load_texts_from_large_csv(path: str, max_rows: int | None) -> list[str]:
     sampled: list[str] = []
     seen = 0
     chunk_idx = 0
+    stop_early = max_rows is not None and SAMPLING_MODE == "head"
+    reservoir_scan_limit = RESERVOIR_SCAN_MAX_ROWS if SAMPLING_MODE == "reservoir" else None
 
     for chunk in pd.read_csv(path, low_memory=False, chunksize=CHUNK_SIZE):
         chunk_idx += 1
@@ -266,10 +298,23 @@ def load_texts_from_large_csv(path: str, max_rows: int | None) -> list[str]:
                 continue
             if len(sampled) < max_rows:
                 sampled.append(text)
+                if stop_early and len(sampled) >= max_rows:
+                    print(
+                        f"  chunk {chunk_idx}: reached cap={max_rows} using head sampling; stopping early.",
+                        flush=True,
+                    )
+                    return sampled
                 continue
-            replace_at = random.randint(0, seen - 1)
-            if replace_at < max_rows:
-                sampled[replace_at] = text
+            if SAMPLING_MODE == "reservoir":
+                replace_at = random.randint(0, seen - 1)
+                if replace_at < max_rows:
+                    sampled[replace_at] = text
+                if reservoir_scan_limit is not None and seen >= reservoir_scan_limit:
+                    print(
+                        f"  chunk {chunk_idx}: reached reservoir scan cap={reservoir_scan_limit}; stopping early.",
+                        flush=True,
+                    )
+                    return sampled
         print(
             f"  chunk {chunk_idx}: scanned={seen} sampled={len(sampled)}",
             flush=True,
@@ -283,7 +328,17 @@ def build_corpus() -> tuple[list[str], dict[str, int]]:
     all_texts: list[str] = []
     loaded_paths: set[str] = set()
 
-    for path in [PRIMARY_DATA_PATH, *OPTIONAL_DATA_PATHS, *GENERAL_DOMAIN_DATA_PATHS]:
+    include_general_domain = str(os.getenv("MLM_INCLUDE_GENERAL_DOMAIN_DATA", "true")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    source_paths = [PRIMARY_DATA_PATH, *OPTIONAL_DATA_PATHS]
+    if include_general_domain:
+        source_paths.extend(GENERAL_DOMAIN_DATA_PATHS)
+
+    for path in source_paths:
         if path in loaded_paths:
             continue
         texts = load_texts_from_csv(path)
@@ -322,6 +377,22 @@ def main() -> None:
 
     base_model = resolve_source_model()
     print(f"Using source model: {base_model}")
+    print(
+        "MLM config:",
+        {
+            "epochs": EPOCHS,
+            "train_batch_size": TRAIN_BATCH_SIZE,
+            "eval_batch_size": EVAL_BATCH_SIZE,
+            "max_length": MAX_LENGTH,
+            "learning_rate": LEARNING_RATE,
+            "include_general_domain_data": str(
+                os.getenv("MLM_INCLUDE_GENERAL_DOMAIN_DATA", "true")
+            ).strip().lower()
+            in {"1", "true", "yes", "on"},
+            "sampling_mode": SAMPLING_MODE,
+            "reservoir_scan_max_rows": RESERVOIR_SCAN_MAX_ROWS,
+        },
+    )
 
     texts, source_counts = build_corpus()
     print(f"Loaded {len(texts)} deduplicated complaint texts for backbone pretraining.")

@@ -7,7 +7,11 @@ from sklearn.model_selection import train_test_split
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 
-FILE_PATH = Path(os.getenv("DATASET_SPLIT_SOURCE", str(DATA_DIR / "dataset_clean.csv")))
+default_split_source = DATA_DIR / "dataset_corrected.csv"
+if not default_split_source.exists():
+    default_split_source = DATA_DIR / "dataset_clean.csv"
+
+FILE_PATH = Path(os.getenv("DATASET_SPLIT_SOURCE", str(default_split_source)))
 OUT_TRAIN = DATA_DIR / "train.csv"
 OUT_VAL = DATA_DIR / "val.csv"
 OUT_TEST = DATA_DIR / "test.csv"

@@ -78,7 +78,8 @@ def main() -> None:
     if missing:
         raise ValueError(f"Missing required columns in {DATA_PATH}: {sorted(missing)}")
 
-    predictions = predict_texts(df["text"].astype(str).tolist())
+    # Fairness evaluation should measure the raw model, not post-hoc demo rules.
+    predictions = predict_texts(df["text"].astype(str).tolist(), apply_rules=False)
     df = df.copy()
     df["pred_label"] = [row["label"] for row in predictions]
     df["pred_priority"] = [row["priority"] for row in predictions]

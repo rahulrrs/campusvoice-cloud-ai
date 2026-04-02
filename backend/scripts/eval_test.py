@@ -22,6 +22,8 @@ from src.utils.model_paths import load_project_env, resolve_backbone_source
 
 MODEL_DIR = PROJECT_ROOT / "outputs" / "edu_classifier_multitask"
 TEST_PATH = PROJECT_ROOT / "data" / "test.csv"
+ANALYSIS_DIR = MODEL_DIR / "analysis"
+MISCLASSIFIED_PATH = ANALYSIS_DIR / "misclassified_test_predictions.csv"
 BATCH = 32
 MAX_LENGTH = 256
 load_project_env(PROJECT_ROOT)
@@ -29,6 +31,7 @@ load_project_env(PROJECT_ROOT)
 
 print("Loading:", TEST_PATH)
 df = pd.read_csv(TEST_PATH, low_memory=False)
+ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
 
 need = {"text", "label_id", "priority_id_fixed"}
 missing = need - set(df.columns)
@@ -225,3 +228,41 @@ print("\nLabel Macro-F1:", f1_score(y_label_true, y_label_pred, average="macro")
 print("Priority Macro-F1:", f1_score(y_prio_true, y_prio_pred, average="macro"))
 print("Label Accuracy:", accuracy_score(y_label_true, y_label_pred))
 print("Priority Accuracy:", accuracy_score(y_prio_true, y_prio_pred))
+
+analysis_df = df.copy().reset_index(drop=True)
+analysis_df["true_label_id"] = np.array(y_label_true, dtype=int)
+analysis_df["pred_label_id"] = np.array(y_label_pred, dtype=int)
+analysis_df["true_priority_id"] = np.array(y_prio_true, dtype=int)
+analysis_df["pred_priority_id"] = np.array(y_prio_pred, dtype=int)
+analysis_df["true_label"] = analysis_df["true_label_id"].map(id_to_label)
+analysis_df["pred_label"] = analysis_df["pred_label_id"].map(id_to_label)
+analysis_df["true_priority"] = analysis_df["true_priority_id"].map(id_to_priority)
+analysis_df["pred_priority"] = analysis_df["pred_priority_id"].map(id_to_priority)
+analysis_df["label_correct"] = analysis_df["true_label_id"] == analysis_df["pred_label_id"]
+analysis_df["priority_correct"] = analysis_df["true_priority_id"] == analysis_df["pred_priority_id"]
+analysis_df["any_error"] = ~(analysis_df["label_correct"] & analysis_df["priority_correct"])
+analysis_df["error_type"] = np.select(
+    [
+        (~analysis_df["label_correct"]) & (~analysis_df["priority_correct"]),
+        (~analysis_df["label_correct"]) & (analysis_df["priority_correct"]),
+        (analysis_df["label_correct"]) & (~analysis_df["priority_correct"]),
+    ],
+    [
+        "label_and_priority",
+        "label_only",
+        "priority_only",
+    ],
+    default="correct",
+)
+
+misclassified_df = analysis_df.loc[analysis_df["any_error"]].copy()
+priority_gap = (
+    misclassified_df["pred_priority_id"].astype(int) - misclassified_df["true_priority_id"].astype(int)
+).abs()
+misclassified_df["priority_distance"] = priority_gap
+misclassified_df = misclassified_df.sort_values(
+    by=["error_type", "priority_distance"],
+    ascending=[True, False],
+).reset_index(drop=True)
+misclassified_df.to_csv(MISCLASSIFIED_PATH, index=False, encoding="utf-8")
+print(f"Saved misclassified rows: {MISCLASSIFIED_PATH}")

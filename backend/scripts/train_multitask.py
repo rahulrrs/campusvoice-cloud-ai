@@ -2,6 +2,7 @@ import json
 import inspect
 import os
 import random
+import shutil
 import sys
 from pathlib import Path
 
@@ -46,13 +47,14 @@ PSEUDO_FEEDBACK_PATH = DATA_DIR / "pseudo_feedback.csv"
 FRONTEND_FEEDBACK_PATH = DATA_DIR / "frontend_feedback.csv"
 OUT_DIR = OUTPUT_DIR
 
-DEFAULT_MAX_LENGTH = 192
+DEFAULT_MAX_LENGTH = int(os.getenv("TRAIN_MAX_LENGTH", "192"))
 SEED = 42
-DEFAULT_EPOCHS = 6
-DEFAULT_BATCH = 8
-DEFAULT_GRAD_ACCUM = 2
-LR = 2.0e-5
-WEIGHT_DECAY = 0.01
+DEFAULT_EPOCHS = int(os.getenv("TRAIN_EPOCHS", "6"))
+DEFAULT_BATCH = int(os.getenv("TRAIN_BATCH_SIZE", "8"))
+DEFAULT_GRAD_ACCUM = int(os.getenv("TRAIN_GRAD_ACCUM", "2"))
+LR = float(os.getenv("TRAIN_LR", "2.0e-5"))
+WEIGHT_DECAY = float(os.getenv("TRAIN_WEIGHT_DECAY", "0.01"))
+TRAIN_INIT_MODE = os.getenv("TRAIN_INIT_MODE", "fresh").strip().lower()
 
 LAMBDA_LABEL = float(os.getenv("LAMBDA_LABEL", "1.05"))
 LAMBDA_PRIORITY = float(os.getenv("LAMBDA_PRIORITY", "1.30"))
@@ -62,16 +64,16 @@ PRIORITY_FOCAL_GAMMA = float(os.getenv("PRIORITY_FOCAL_GAMMA", "1.2"))
 LABEL_SMOOTHING = float(os.getenv("LABEL_SMOOTHING", "0.04"))
 PRIORITY_SMOOTHING = float(os.getenv("PRIORITY_SMOOTHING", "0.02"))
 
-MAX_PER_CLASS = 0
-OVERSAMPLE_HIGH_PRIORITY = 1
+MAX_PER_CLASS = int(os.getenv("MAX_PER_CLASS", "0"))
+OVERSAMPLE_HIGH_PRIORITY = int(os.getenv("OVERSAMPLE_HIGH_PRIORITY", "1"))
 
-USE_WEIGHTED_SAMPLER = "auto"
-SAMPLER_LABEL_EXP = 0.6
-SAMPLER_PRIORITY_EXP = 0.8
-USE_PSEUDO_FEEDBACK = False
-MAX_PSEUDO_FEEDBACK_ROWS = 5000
-USE_FRONTEND_FEEDBACK = False
-MAX_FRONTEND_FEEDBACK_ROWS = 10000
+USE_WEIGHTED_SAMPLER = os.getenv("USE_WEIGHTED_SAMPLER", "auto")
+SAMPLER_LABEL_EXP = float(os.getenv("SAMPLER_LABEL_EXP", "0.6"))
+SAMPLER_PRIORITY_EXP = float(os.getenv("SAMPLER_PRIORITY_EXP", "0.8"))
+USE_PSEUDO_FEEDBACK = os.getenv("USE_PSEUDO_FEEDBACK", "false").strip().lower() in {"1", "true", "yes", "on"}
+MAX_PSEUDO_FEEDBACK_ROWS = int(os.getenv("MAX_PSEUDO_FEEDBACK_ROWS", "5000"))
+USE_FRONTEND_FEEDBACK = os.getenv("USE_FRONTEND_FEEDBACK", "false").strip().lower() in {"1", "true", "yes", "on"}
+MAX_FRONTEND_FEEDBACK_ROWS = int(os.getenv("MAX_FRONTEND_FEEDBACK_ROWS", "10000"))
 REVIEWED_NOTES_WEIGHT_BOOST = float(os.getenv("REVIEWED_NOTES_WEIGHT_BOOST", "1.15"))
 REVIEWED_CORRECTION_WEIGHT_BOOST = float(os.getenv("REVIEWED_CORRECTION_WEIGHT_BOOST", "1.35"))
 # ---------------------------------------
@@ -88,6 +90,33 @@ REVIEW_NOTE_FEATURE_NAMES = [
     "review_note_infrastructure_term_hits",
     "review_status_approved_flag",
 ]
+
+
+def resolve_training_init_mode() -> str:
+    allowed = {"fresh", "resume", "auto"}
+    if TRAIN_INIT_MODE not in allowed:
+        raise ValueError(f"Invalid TRAIN_INIT_MODE '{TRAIN_INIT_MODE}'. Expected one of {sorted(allowed)}")
+    return TRAIN_INIT_MODE
+
+
+def find_classifier_checkpoint(model_dir: Path) -> Path | None:
+    safetensors_path = model_dir / "model.safetensors"
+    if safetensors_path.exists():
+        return safetensors_path
+    bin_path = model_dir / "pytorch_model.bin"
+    if bin_path.exists():
+        return bin_path
+    return None
+
+
+def load_checkpoint_state_dict(path: Path) -> dict[str, torch.Tensor]:
+    if path.suffix == ".safetensors":
+        from safetensors.torch import load_file
+
+        # Clone tensors so Windows does not keep the source safetensors file
+        # memory-mapped while we later save a refreshed checkpoint.
+        return {key: value.clone() for key, value in load_file(str(path)).items()}
+    return torch.load(path, map_location="cpu")
 
 
 def derive_id_maps_from_splits(train_df: pd.DataFrame, val_df: pd.DataFrame) -> tuple[dict[int, str], dict[int, str]]:
@@ -783,11 +812,30 @@ def main():
     sample_weights = sample_weights / sample_weights.mean()
     sample_weights = torch.tensor(sample_weights, dtype=torch.double)
 
+    init_mode = resolve_training_init_mode()
+    classifier_checkpoint = find_classifier_checkpoint(OUT_DIR)
+    use_resume_init = False
+    if init_mode == "resume":
+        if classifier_checkpoint is None:
+            raise FileNotFoundError(
+                f"TRAIN_INIT_MODE=resume but no classifier checkpoint was found in {OUT_DIR}"
+            )
+        use_resume_init = True
+    elif init_mode == "auto" and classifier_checkpoint is not None:
+        use_resume_init = True
+
     base_model, backbone_note = resolve_backbone_source(PROJECT_ROOT, OUT_DIR)
     if backbone_note:
         print(backbone_note)
-    print("Using base model:", base_model)
-    tokenizer = AutoTokenizer.from_pretrained(base_model)
+    if use_resume_init:
+        print(f"Initialization mode: resume from existing classifier checkpoint: {classifier_checkpoint}")
+        tokenizer_source = str(OUT_DIR) if (OUT_DIR / "tokenizer_config.json").exists() else base_model
+    else:
+        print(f"Initialization mode: fresh from backbone: {base_model}")
+        tokenizer_source = base_model
+
+    print("Using tokenizer source:", tokenizer_source)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_source)
     dynamic_max_length = choose_dynamic_max_length(tokenizer, train_df["text"])
     runtime_cfg = choose_runtime_hyperparams(train_df)
     use_weighted_sampler = should_use_weighted_sampler(label_counts, prio_counts)
@@ -824,6 +872,20 @@ def main():
         label_metadata_dim=len(metadata_feature_names),
         priority_metadata_dim=len(metadata_feature_names),
     )
+    if use_resume_init:
+        state_dict = load_checkpoint_state_dict(classifier_checkpoint)
+        for key in ("label_weights", "priority_weights", "priority_cost_matrix"):
+            state_dict.pop(key, None)
+        missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
+        incompatible_missing = [
+            key for key in missing_keys if key not in {"label_weights", "priority_weights", "priority_cost_matrix"}
+        ]
+        if incompatible_missing or unexpected_keys:
+            raise ValueError(
+                "Could not resume classifier cleanly. "
+                f"Missing keys: {incompatible_missing} | Unexpected keys: {unexpected_keys}"
+            )
+        print(f"Loaded classifier weights from: {classifier_checkpoint}")
 
     use_fp16 = torch.cuda.is_available()
     print("CUDA available:", use_fp16)
@@ -853,17 +915,39 @@ def main():
     trainer.train()
 
     print("Saving model + tokenizer + mappings...")
-    trainer.save_model(OUT_DIR)
-    tokenizer.save_pretrained(OUT_DIR)
+    save_dir = OUT_DIR
+    staging_dir = None
+    if use_resume_init:
+        staging_dir = OUT_DIR.parent / f"{OUT_DIR.name}.__save_tmp__"
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir)
+        staging_dir.mkdir(parents=True, exist_ok=True)
+        save_dir = staging_dir
+        print(f"Resume save staging directory: {staging_dir}")
 
-    with open(os.path.join(OUT_DIR, "id_to_label.json"), "w", encoding="utf-8") as f:
+    trainer.save_model(save_dir)
+    tokenizer.save_pretrained(save_dir)
+
+    with open(os.path.join(save_dir, "id_to_label.json"), "w", encoding="utf-8") as f:
         json.dump({str(k): v for k, v in id_to_label.items()}, f, indent=2)
 
-    with open(os.path.join(OUT_DIR, "id_to_priority.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(save_dir, "id_to_priority.json"), "w", encoding="utf-8") as f:
         json.dump({str(k): v for k, v in id_to_priority.items()}, f, indent=2)
 
-    with open(os.path.join(OUT_DIR, "metadata_config.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(save_dir, "metadata_config.json"), "w", encoding="utf-8") as f:
         json.dump(metadata_scaler, f, indent=2)
+
+    if staging_dir is not None:
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        for child in staging_dir.iterdir():
+            target = OUT_DIR / child.name
+            if target.exists():
+                if target.is_dir():
+                    shutil.rmtree(target)
+                else:
+                    target.unlink()
+            shutil.move(str(child), str(target))
+        shutil.rmtree(staging_dir)
 
     print("Done")
     print(f"Training outputs saved under: {OUT_DIR}")

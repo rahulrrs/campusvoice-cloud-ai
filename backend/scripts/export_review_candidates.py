@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import hashlib
 from pathlib import Path
 
 import pandas as pd
@@ -24,6 +25,7 @@ OUT_PATH = OUT_DIR / "review_candidates.csv"
 
 PRIORITY_HOTSPOTS = {
     ("Low", "Medium"),
+    ("Medium", "Low"),
     ("High", "Medium"),
     ("Medium", "High"),
 }
@@ -68,8 +70,10 @@ def main() -> None:
 
         review_rows.append(
             {
+                "source_dataset": str(DATA_PATH),
                 "row_index": idx,
                 "text": row["text"],
+                "text_hash": hashlib.sha256(str(row["text"]).strip().encode("utf-8")).hexdigest(),
                 "current_label": true_label,
                 "predicted_label": pred_label,
                 "label_confidence": round(label_conf, 4),
@@ -78,6 +82,7 @@ def main() -> None:
                 "priority_confidence": round(priority_conf, 4),
                 "review_reason": "|".join(review_reason),
                 "review_status": "",
+                "corrected_text": "",
                 "corrected_label": "",
                 "corrected_priority": "",
                 "review_notes": "",

@@ -222,6 +222,42 @@ _DISCIPLINE_RE = re.compile(
     r"stolen|theft|robbed|lost|missing|cheating|misconduct)\b",
     re.I,
 )
+_ATTENDANCE_RE = re.compile(
+    r"\b(attendance|absen(?:ce|t)|leave application|attendance shortage|medical proof|"
+    r"medical certificate|condonation)\b",
+    re.I,
+)
+_IT_DIGITAL_RE = re.compile(
+    r"\b(wifi|wi-fi|internet|network|portal|login|server|website|system|id\s*card|smart\s*card|"
+    r"access card|access\s+issue|not working|not\s+approved\s+through\s+portal)\b",
+    re.I,
+)
+_INFRASTRUCTURE_RE = re.compile(
+    r"\b(projector|classroom|lab|systems?\b|computer lab|washroom|toilet|restroom|"
+    r"cleaning|hygiene supplies|sports facilities|facility timings|mess menu|served|parking area)\b",
+    re.I,
+)
+_PLACEMENT_RE = re.compile(
+    r"\b(placement|recruiter|career|internship|training sessions?)\b",
+    re.I,
+)
+_TRANSPORT_RE = re.compile(
+    r"\b(parking|vehicles?|bike|car|bus|transport|pathways?)\b",
+    re.I,
+)
+_LIBRARY_RE = re.compile(
+    r"\b(library|group study rooms?|booking|reserve rooms?)\b",
+    re.I,
+)
+_FEES_RE = re.compile(
+    r"\b(fee|fees|refund|scholarship|credited|bank account|accounts office|payment status)\b",
+    re.I,
+)
+_EXAMINATION_STRONG_RE = re.compile(
+    r"\b(assignment|submitted on time|late submission|submission logs|internal score|"
+    r"marks affected|makeup exams?|exam seating|seating arrangement)\b",
+    re.I,
+)
 
 
 def _is_real_exam_complaint(text: str) -> bool:
@@ -254,9 +290,101 @@ def _is_urgent(text: str) -> bool:
     return bool(_URGENCY_RE.search(text or ""))
 
 
+def _contains_any(text: str, phrases: list[str]) -> bool:
+    t = (text or "").lower()
+    return any(phrase in t for phrase in phrases)
+
+
+def _is_faculty_grading_issue(text: str) -> bool:
+    lowered = str(text or "").lower()
+    staff_terms = ["faculty", "prof", "professor", "teacher", "instructor", "lecturer"]
+    grading_terms = [
+        "assignment",
+        "late submission",
+        "submitted on time",
+        "confirmation screenshot",
+        "submission logs",
+        "internal score",
+        "marks are affected",
+        "marks affected",
+        "grading",
+        "graded",
+        "marked it as late",
+    ]
+    return _contains_any(lowered, staff_terms) and _contains_any(lowered, grading_terms)
+
+
+def _is_exam_administration_issue(text: str) -> bool:
+    lowered = str(text or "").lower()
+    exam_admin_terms = [
+        "exam seating",
+        "seating arrangement",
+        "hall ticket",
+        "admit card",
+        "exam centre",
+        "exam center",
+        "exam schedule",
+        "timetable",
+        "time table",
+        "revaluation",
+        "result",
+        "exam date",
+        "venue",
+        "searching for their rooms",
+    ]
+    return _contains_any(lowered, exam_admin_terms) or (_is_real_exam_complaint(text) and not _is_faculty_grading_issue(text))
+
+
+def _is_it_access_issue(text: str) -> bool:
+    lowered = str(text or "").lower()
+    return _contains_any(
+        lowered,
+        [
+            "wifi",
+            "wi-fi",
+            "internet",
+            "network problem",
+            "portal",
+            "login",
+            "server",
+            "website",
+            "id card stopped working",
+            "smart card",
+            "access card",
+            "cannot access",
+            "unable to access",
+            "access essential facilities",
+            "locked out",
+            "not working",
+        ],
+    )
+
+
+def _is_library_facility_issue(text: str) -> bool:
+    lowered = str(text or "").lower()
+    return _LIBRARY_RE.search(text or "") is not None and not _is_it_access_issue(lowered)
+
+
 def _apply_obvious_label_rule(text: str, current_label: str) -> str:
     t = text or ""
-    if _is_real_exam_complaint(t):
+    lowered = t.lower()
+    if _is_faculty_grading_issue(t):
+        return FACULTY_OVERRIDE_LABEL_NAME
+    if _ATTENDANCE_RE.search(t) and ("attendance" in lowered or "leave" in lowered):
+        return "Attendance"
+    if _FEES_RE.search(t):
+        return "Fees"
+    if _is_it_access_issue(t):
+        return "IT & Digital Services"
+    if _PLACEMENT_RE.search(t):
+        return "Placement & Career Services"
+    if _TRANSPORT_RE.search(t) and "parking" in lowered:
+        return "Transportation"
+    if _is_library_facility_issue(t):
+        return "Library"
+    if _contains_any(lowered, ["projector", "washrooms", "sports facilities", "mess menu", "lab infrastructure", "not enough systems"]):
+        return "Infrastructure"
+    if _is_exam_administration_issue(t) or _EXAMINATION_STRONG_RE.search(t):
         return EXAM_OVERRIDE_LABEL_NAME
     if _is_certificate_issue(t):
         return CERTIFICATE_OVERRIDE_LABEL_NAME
@@ -272,13 +400,75 @@ def _apply_obvious_priority_rule(text: str, current_label: str, current_priority
     label = str(current_label or "")
     priority = str(current_priority or "Medium")
 
+    if label == "Faculty" and _contains_any(
+        t,
+        [
+            "marks are affected",
+            "internal score",
+            "worried about my internal score",
+            "late submission",
+            "submitted on time",
+            "submission logs",
+        ],
+    ):
+        return "High"
+    if label == "IT & Digital Services" and _contains_any(
+        t,
+        [
+            "deadline today",
+            "deadline tomorrow",
+            "submission today",
+            "submit today",
+            "exam tomorrow",
+            "exam today",
+            "miss exam",
+        ],
+    ):
+        return "High"
+    if label == "IT & Digital Services" and _contains_any(
+        t,
+        [
+            "past week",
+            "deadlines",
+            "online classes",
+            "project work",
+            "cannot access essential facilities",
+            "id card stopped working",
+            "cannot access",
+            "unable to access",
+            "portal",
+            "wifi",
+            "wi-fi",
+            "network",
+        ],
+    ):
+        return "Medium"
+    if label == "Attendance" and _contains_any(t, ["attendance shows shortage", "attendance shortage"]):
+        return "High"
+    if label == "Transportation" and _contains_any(t, ["scratched", "blocking pathways"]):
+        return "Medium"
+    if label == "Infrastructure" and _contains_any(
+        t,
+        ["projector", "not enough systems", "washrooms", "sports facilities", "menu consistency", "served most of the time"],
+    ):
+        return "Low" if _contains_any(t, ["sports facilities", "facility timings", "mess menu", "served most of the time"]) else "Medium"
+    if label == "Infrastructure" and _contains_any(t, ["mess menu displayed", "repetitive food options"]):
+        return "Low"
+    if label == "Placement & Career Services" and _contains_any(t, ["regular class hours", "career preparation"]):
+        return "Medium"
+    if label == "Library" and _contains_any(t, ["occupied without booking", "reserve rooms"]):
+        return "Medium"
+    if label == "Examination" and _contains_any(t, ["exam seating", "seating arrangement", "searching for their rooms", "confusion"]):
+        return "Low"
+    if label == "Fees" and _contains_any(t, ["refund", "accounts office", "withdrew from elective courses"]):
+        return "Medium"
+    if label == "Fees" and _contains_any(t, ["scholarship amount", "not credited", "bank account", "academic expenses"]):
+        return "High"
+
     high_signals = [
         "marks affected",
         "internal score",
         "attendance shortage",
-        "unable to access",
-        "cannot access",
-        "blocked",
         "scholarship amount",
         "not credited",
         "unsafe",
@@ -443,8 +633,10 @@ def predict_texts(texts):
             prio_conf = prio_probs.max(dim=1).values.cpu().tolist()
 
             for t, lid, lconf, pid, pconf in zip(batch_texts, label_ids, label_conf, prio_ids, prio_conf):
-                label_name = id_to_label.get(int(lid), id_to_label.get(0, "Other"))
-                prio_name = _priority_name_from_id(int(pid))
+                raw_label_name = id_to_label.get(int(lid), id_to_label.get(0, "Other"))
+                raw_prio_name = _priority_name_from_id(int(pid))
+                label_name = raw_label_name
+                prio_name = raw_prio_name
                 label_low_conf = lconf < LABEL_THRESHOLD
                 prio_low_conf = pconf < PRIO_THRESHOLD
 
@@ -481,6 +673,12 @@ def predict_texts(texts):
                 if ENFORCE_UNKNOWN_PRIORITY_IF_UNKNOWN_LABEL and label_low_conf:
                     prio_name = "Medium"
 
+                label_rule_applied = label_name != raw_label_name
+                priority_rule_applied = prio_name != raw_prio_name
+                label_review_required = bool(label_low_conf or (label_rule_applied and lconf < 0.75))
+                priority_review_required = bool(prio_low_conf or (priority_rule_applied and pconf < 0.75))
+                needs_review = bool(label_review_required or priority_review_required)
+
                 final_label_id = label_to_id.get(label_name, int(lid))
                 final_prio_id = priority_to_id.get(prio_name, int(pid))
                 added_feedback += int(
@@ -494,8 +692,14 @@ def predict_texts(texts):
                         "text": t,
                         "label": label_name,
                         "label_confidence": float(lconf),
+                        "raw_label": raw_label_name,
                         "priority": prio_name,
                         "priority_confidence": float(pconf),
+                        "raw_priority": raw_prio_name,
+                        "decision_source": "rules" if (label_rule_applied or priority_rule_applied) else "model",
+                        "label_review_required": label_review_required,
+                        "priority_review_required": priority_review_required,
+                        "needs_review": needs_review,
                     }
                 )
 
@@ -570,3 +774,11 @@ if __name__ == "__main__":
         print(f"\nTEXT: {r['text']}")
         print(f"LABEL: {r['label']} (conf={r['label_confidence']:.3f})")
         print(f"PRIO : {r['priority']} (conf={r['priority_confidence']:.3f})")
+        if r.get("decision_source") == "rules":
+            print(f"RAW  : label={r['raw_label']}, priority={r['raw_priority']}")
+        if r.get("needs_review"):
+            print(
+                "REVIEW: "
+                f"label_review={r['label_review_required']}, "
+                f"priority_review={r['priority_review_required']}"
+            )
