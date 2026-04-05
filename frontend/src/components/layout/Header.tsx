@@ -6,6 +6,7 @@ import { Bell, LayoutDashboard, LogOut, Menu, MessageSquare, Plus, ShieldCheck, 
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { useAccessProfile } from "@/hooks/useAccessProfile";
 import HeaderAssistant from "@/components/layout/HeaderAssistant";
 import { complaintsApi } from "@/integrations/aws/client";
 import { preloadRouteForPath } from "@/lib/routeLoaders";
@@ -16,12 +17,9 @@ const Header = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
+  const { data: accessProfile } = useAccessProfile();
   const { toast } = useToast();
-  const adminEmails = (import.meta.env.VITE_ADMIN_EMAILS ?? "")
-    .split(",")
-    .map((value: string) => value.trim().toLowerCase())
-    .filter((value: string) => value.length > 0);
-  const isAdmin = !!user?.email && adminEmails.includes(user.email.toLowerCase());
+  const isAdmin = Boolean(accessProfile?.is_admin);
 
   const notificationsQuery = useQuery({
     queryKey: ["notifications", user?.id],

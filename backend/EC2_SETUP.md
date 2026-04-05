@@ -36,7 +36,7 @@ Common combinations:
 - `AWS_REGION`: same region as Cognito/S3/RDS
 - `CORS_ALLOW_ORIGIN`: CloudFront frontend URL, for example `https://app.example.com`
 - `PRESIGNED_URL_EXPIRES_SECONDS`: presigned upload/download URL TTL
-- `ADMIN_EMAILS`: comma-separated admin emails
+- `SUPER_ADMIN_EMAILS`: comma-separated bootstrap super admin emails
 
 ### Optional model sync from S3
 - `MODEL_SYNC_ON_STARTUP=true` to download model artifacts before Uvicorn starts

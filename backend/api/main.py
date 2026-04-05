@@ -138,7 +138,6 @@ class Settings(BaseModel):
     attachments_bucket: str = Field(default="")
     cors_allow_origin: str = Field(default="*")
     presigned_url_expires_seconds: int = Field(default=900)
-    admin_emails: str = Field(default="")
     super_admin_emails: str = Field(default="")
     backbone_model_name: str = Field(default="roberta-base")
     backbone_model_dir: str = Field(default=str(APP_ROOT / "outputs" / "general_complaint_model"))
@@ -160,7 +159,6 @@ def get_settings() -> Settings:
         attachments_bucket=os.getenv("ATTACHMENTS_BUCKET", ""),
         cors_allow_origin=os.getenv("CORS_ALLOW_ORIGIN", "*"),
         presigned_url_expires_seconds=int(os.getenv("PRESIGNED_URL_EXPIRES_SECONDS", "900")),
-        admin_emails=os.getenv("ADMIN_EMAILS", ""),
         super_admin_emails=os.getenv("SUPER_ADMIN_EMAILS", ""),
         backbone_model_name=os.getenv("BACKBONE_MODEL_NAME", "roberta-base"),
         backbone_model_dir=os.getenv(
@@ -371,14 +369,6 @@ _FAQ_ITEMS = [
 ]
 
 
-def _get_admin_email_set() -> set[str]:
-    return {
-        item.strip().lower()
-        for item in settings.admin_emails.split(",")
-        if item.strip()
-    }
-
-
 def _get_super_admin_email_set() -> set[str]:
     return {
         item.strip().lower()
@@ -485,8 +475,6 @@ def _resolve_access_from_sources(email: str | None) -> tuple[str, bool, bool]:
         if status_value == "active" and role in {"admin", "super_admin"}:
             return (role, True, role == "super_admin")
 
-    if normalized_email in _get_admin_email_set():
-        return ("admin", True, False)
     return ("user", False, False)
 
 

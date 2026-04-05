@@ -16,7 +16,6 @@ VITE_AWS_REGION=ap-south-1
 VITE_AWS_USER_POOL_ID=ap-south-1_example
 VITE_AWS_USER_POOL_CLIENT_ID=exampleclientid
 VITE_AWS_API_BASE_URL=http://localhost
-VITE_ADMIN_EMAILS=admin@example.com
 ```
 
 For the backend in local development:
@@ -27,6 +26,27 @@ pip install -r requirements.gpu.txt
 ```
 
 If your machine does not need GPU PyTorch, use `requirements.cpu.txt` instead.
+
+## Frontend modes
+
+Use the mode-specific env files in this folder instead of editing one `.env` repeatedly.
+
+- `npm run dev:local-direct`
+  Uses [frontend/.env.local-direct](/d:/Dev/programming/online_complaint_system/frontend/.env.local-direct) for local frontend + direct local backend on `http://localhost:8000`
+- `npm run dev:local-docker`
+  Uses [frontend/.env.local-docker](/d:/Dev/programming/online_complaint_system/frontend/.env.local-docker) for local frontend + Docker Compose backend on `http://localhost`
+- `npm run build:cloudfront-tunnel`
+  Uses [frontend/.env.cloudfront-tunnel](/d:/Dev/programming/online_complaint_system/frontend/.env.cloudfront-tunnel) for CloudFront frontend + publicly tunneled local backend
+- `npm run build:production`
+  Uses [frontend/.env.production](/d:/Dev/programming/online_complaint_system/frontend/.env.production) for CloudFront frontend + public production backend such as EC2
+
+Mode mapping for your 5 scenarios:
+
+- `1. local normal backend + local frontend`: `npm run dev:local-direct`
+- `2. local normal backend + CloudFront frontend`: edit [frontend/.env.cloudfront-tunnel](/d:/Dev/programming/online_complaint_system/frontend/.env.cloudfront-tunnel) with your tunnel URL, then run `npm run build:cloudfront-tunnel`
+- `3. dockerized local backend + local frontend`: `npm run dev:local-docker`
+- `4. dockerized local backend + CloudFront frontend`: edit [frontend/.env.cloudfront-tunnel](/d:/Dev/programming/online_complaint_system/frontend/.env.cloudfront-tunnel) with your tunnel URL, then run `npm run build:cloudfront-tunnel`
+- `5. EC2 dockerized backend + CloudFront frontend`: edit [frontend/.env.production](/d:/Dev/programming/online_complaint_system/frontend/.env.production) with your public backend URL, then run `npm run build:production`
 
 ## Production build
 
