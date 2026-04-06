@@ -1,15 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Download, FileText, ShieldOff, Tag } from "lucide-react";
-import { Link, useParams } from "react-router-dom";
+import { ArrowLeft, Download, FileText, ShieldOff, Tag, Trash2 } from "lucide-react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import ComplaintTimeline from "@/components/complaints/ComplaintTimeline";
 import ComplaintUpdatesPanel from "@/components/complaints/ComplaintUpdatesPanel";
 import StatusBadge from "@/components/complaints/StatusBadge";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useComplaintDetail } from "@/hooks/useComplaints";
+import { deletePendingComplaint } from "@/offline/db";
 import { complaintsApi } from "@/integrations/aws/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -19,6 +31,7 @@ const ComplaintDetail = () => {
   const [reopenReason, setReopenReason] = useState("");
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const { data: complaint, isLoading } = useComplaintDetail(id);
   const updatesQuery = useQuery({
     queryKey: ["complaint-updates", id],
@@ -65,6 +78,38 @@ const ComplaintDetail = () => {
     onError: (error: Error) => {
       toast({
         title: "Could not reopen complaint",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      if (!id) throw new Error("Complaint not found");
+
+      if (isLocalComplaint) {
+        await deletePendingComplaint(id.replace("local-", ""));
+        return { ok: true };
+      }
+
+      return complaintsApi.deleteComplaint(id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["complaints"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      queryClient.removeQueries({ queryKey: ["complaint-detail"] });
+      queryClient.removeQueries({ queryKey: ["complaint-updates"] });
+      toast({
+        title: isLocalComplaint ? "Queued complaint deleted" : "Complaint deleted",
+        description: isLocalComplaint
+          ? "The offline complaint draft was removed from this device."
+          : "Your complaint and its conversation were removed successfully.",
+      });
+      navigate("/dashboard");
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Could not delete complaint",
         description: error.message,
         variant: "destructive",
       });
@@ -143,6 +188,36 @@ const ComplaintDetail = () => {
                   Submitted on {new Date(complaint.submitted_at ?? complaint.created_at).toLocaleString()}
                 </p>
               </div>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" className="self-start text-destructive hover:text-destructive">
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete Complaint
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete this complaint?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {isLocalComplaint
+                        ? "This will remove the offline complaint draft from this device before it syncs."
+                        : "This will permanently remove the complaint, its updates, and related audit history from the app."}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={(event) => {
+                        event.preventDefault();
+                        void deleteMutation.mutateAsync();
+                      }}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      {deleteMutation.isPending ? "Deleting..." : "Delete Complaint"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           </div>
         </section>

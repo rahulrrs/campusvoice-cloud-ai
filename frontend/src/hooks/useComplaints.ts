@@ -114,7 +114,7 @@ export const useComplaints = (filters?: ComplaintListFilters) => {
     },
     enabled: !!user,
     staleTime: 60_000,
-    refetchOnMount: false,
+    refetchOnMount: true,
   });
 };
 
@@ -141,12 +141,11 @@ export const useComplaintDetail = (complaintId: string | undefined) => {
     },
     enabled: !!user && !!complaintId,
     staleTime: 120_000,
-    refetchOnMount: false,
+    refetchOnMount: true,
   });
 };
 
 export const useCreateComplaint = () => {
-  const queryClient = useQueryClient();
   const { user } = useAuth();
 
   return useMutation({
@@ -173,13 +172,6 @@ export const useCreateComplaint = () => {
         user_id: user.id,
         status: "submitted",
       });
-    },
-    onSuccess: () => {
-      if (user) {
-        queryClient.invalidateQueries({ queryKey: ["complaints", user.id] });
-      } else {
-        queryClient.invalidateQueries({ queryKey: ["complaints"] });
-      }
     },
   });
 };

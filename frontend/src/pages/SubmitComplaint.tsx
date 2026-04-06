@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { AlertCircle, CheckCircle2, FileAudio, FileText, Files, Mic, MicOff, Send, ShieldOff, Upload } from "lucide-react";
 import Header from "@/components/layout/Header";
@@ -9,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -19,6 +21,7 @@ import { savePendingComplaint, deletePendingComplaint, type QueuedAttachment } f
 
 const SubmitComplaint = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
   const { user, loading } = useAuth();
   const { data: accessProfile } = useAccessProfile();
@@ -40,6 +43,7 @@ const SubmitComplaint = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [isAnonymous, setIsAnonymous] = useState(true);
   const [formData, setFormData] = useState({ title: "", description: "" });
+  const [isSuccessDialogOpen, setIsSuccessDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -178,6 +182,14 @@ const SubmitComplaint = () => {
     resetRecordingState();
     voiceChunksRef.current = [];
     setVoiceBlob(null);
+  };
+
+  const resetForm = () => {
+    setFormData({ title: "", description: "" });
+    setSelectedFiles([]);
+    setSelectedAudioFiles([]);
+    setIsAnonymous(true);
+    clearVoiceClip();
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -322,6 +334,8 @@ const SubmitComplaint = () => {
         already_queued: true,
       });
       await deletePendingComplaint(localId);
+      await queryClient.invalidateQueries({ queryKey: ["complaints"], refetchType: "all" });
+      await queryClient.invalidateQueries({ queryKey: ["notifications"], refetchType: "all" });
       submitted = true;
     } catch (error) {
       toast({
@@ -338,7 +352,17 @@ const SubmitComplaint = () => {
       }
     }
 
-    if (submitted || !navigator.onLine) {
+    if (!navigator.onLine) {
+      await queryClient.invalidateQueries({ queryKey: ["complaints"], refetchType: "all" });
+    }
+
+    if (submitted) {
+      resetForm();
+      setIsSuccessDialogOpen(true);
+      return;
+    }
+
+    if (!navigator.onLine) {
       navigate("/dashboard");
     }
   };
@@ -354,6 +378,27 @@ const SubmitComplaint = () => {
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Header />
+      <Dialog open={isSuccessDialogOpen} onOpenChange={setIsSuccessDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader className="items-center text-center sm:items-center sm:text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-success/10 text-success">
+              <CheckCircle2 className="h-7 w-7" />
+            </div>
+            <DialogTitle>Complaint submitted successfully</DialogTitle>
+            <DialogDescription>
+              Your complaint has been sent to the review queue. You can track progress from the dashboard or submit another issue now.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col gap-2 sm:flex-col sm:space-x-0">
+            <Button type="button" variant="hero" onClick={() => navigate("/dashboard")}>
+              Go to Dashboard
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setIsSuccessDialogOpen(false)}>
+              Submit Another Complaint
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <main className="flex-1">
         <section className="border-b bg-card">

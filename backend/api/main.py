@@ -557,37 +557,24 @@ def get_current_user(authorization: str | None = Header(default=None)) -> Curren
             signing_key.key,
             algorithms=["RS256"],
             issuer=issuer,
-            options={"verify_aud": False},
+            audience=settings.cognito_app_client_id,
+            options={"require": ["exp", "iat", "iss", "sub"]},
         )
     except Exception as exc:
-        # Dev-friendly fallback: inspect token claims without signature verification
-        # so we can diagnose mismatched token types/app clients more easily.
-        try:
-            payload = jwt.decode(
-                token,
-                options={
-                    "verify_signature": False,
-                    "verify_exp": True,
-                    "verify_aud": False,
-                    "verify_iss": False,
-                },
-                algorithms=["RS256"],
-            )
-            unverified_iss = payload.get("iss")
-            if not isinstance(unverified_iss, str) or settings.cognito_user_pool_id not in unverified_iss:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token issuer"
-                ) from exc
-        except HTTPException:
-            raise
-        except Exception:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
-            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+        ) from exc
 
     user_id = payload.get("sub")
     if not isinstance(user_id, str) or not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token missing sub")
+    token_use = payload.get("token_use")
+    if token_use != "id":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unsupported token type",
+        )
     email = payload.get("email")
     email_str = email if isinstance(email, str) else None
     role, is_admin, is_super_admin = _resolve_access_from_sources(email_str)
@@ -723,6 +710,20 @@ def _get_owned_complaint(
     if not row:
         raise HTTPException(status_code=404, detail="Complaint not found")
     return row
+
+
+def _delete_attachment_objects(keys: list[str]) -> None:
+    normalized = [key.strip() for key in keys if isinstance(key, str) and key.strip()]
+    if not normalized or not settings.attachments_bucket:
+        return
+
+    try:
+        s3_client.delete_objects(
+            Bucket=settings.attachments_bucket,
+            Delete={"Objects": [{"Key": key} for key in normalized], "Quiet": True},
+        )
+    except Exception as exc:
+        logger.warning("Failed to delete complaint attachment objects from S3: %s", exc)
 
 
 def _notification_item(
@@ -3020,12 +3021,7 @@ def _contextual_priority_adjustment(
     score = max(score, float(priority_confidence or 0.0))
     score += min(0.18, feature_map.get("urgency_term_hits", 0.0) * 0.05)
     score += min(0.14, feature_map.get("deadline_term_hits", 0.0) * 0.05)
-    score += min(0.10, feature_map.get("attachment_count", 0.0) * 0.03)
     score += min(0.08, feature_map.get("harassment_term_hits", 0.0) * 0.04)
-    if "speech_to_text" in (multimodal_evidence or {}).get("available_modalities", []):
-        score += 0.03
-    if "ocr" in (multimodal_evidence or {}).get("available_modalities", []):
-        score += 0.03
 
     if score >= 0.78:
         return "high", round(min(1.0, score), 4)
@@ -3176,14 +3172,7 @@ def health():
 
 @app.get("/health/dependencies")
 def health_dependencies():
-    deps: dict[str, Any] = {
-        "api": "ok",
-        "aws_region": settings.aws_region,
-        "rds_host": settings.rds_host,
-        "attachments_bucket": settings.attachments_bucket,
-        "chatbot_provider": settings.chatbot_provider,
-        "gemini_model": settings.gemini_model if settings.chatbot_provider.strip().lower() == "gemini" else "",
-    }
+    deps: dict[str, Any] = {"api": "ok"}
 
     host = settings.rds_host
     port = int(settings.rds_port)
@@ -3193,18 +3182,16 @@ def health_dependencies():
                 deps["rds_tcp"] = "ok"
         else:
             deps["rds_tcp"] = "missing_host"
-    except Exception as exc:
-        deps["rds_tcp"] = f"error: {exc}"
+    except Exception:
+        deps["rds_tcp"] = "error"
 
     try:
         with get_db_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT COUNT(*) AS count FROM complaints")
-                row = cur.fetchone() or {}
         deps["db_query"] = "ok"
-        deps["complaints_count"] = int(row.get("count", 0))
-    except Exception as exc:
-        deps["db_query"] = f"error: {exc}"
+    except Exception:
+        deps["db_query"] = "error"
 
     try:
         if settings.attachments_bucket:
@@ -3212,8 +3199,11 @@ def health_dependencies():
             deps["s3_bucket"] = "ok"
         else:
             deps["s3_bucket"] = "missing_bucket"
-    except Exception as exc:
-        deps["s3_bucket"] = f"error: {exc}"
+    except Exception:
+        deps["s3_bucket"] = "error"
+
+    deps["chatbot_provider"] = "configured" if settings.chatbot_provider.strip() else "disabled"
+    deps["chatbot_model"] = "configured" if settings.chatbot_provider.strip().lower() == "gemini" and settings.gemini_model.strip() else "n/a"
 
     return deps
 
@@ -3510,6 +3500,39 @@ def get_complaint_detail(
     return _serialize_user_row(row)
 
 
+@app.delete("/complaints/{complaint_id}")
+def delete_complaint(
+    complaint_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    with get_db_conn() as conn:
+        with conn.cursor() as cur:
+            row = _get_owned_complaint(
+                cur,
+                complaint_id,
+                current_user.user_id,
+                columns="id, attachments",
+            )
+            attachments = row.get("attachments")
+            attachment_keys = attachments if isinstance(attachments, list) else []
+            cur.execute(
+                """
+                DELETE FROM complaints
+                WHERE id = %s::uuid AND user_id = %s
+                RETURNING id
+                """,
+                (complaint_id, current_user.user_id),
+            )
+            deleted = cur.fetchone()
+        conn.commit()
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+
+    _delete_attachment_objects(attachment_keys)
+    return {"ok": True, "id": complaint_id}
+
+
 @app.get("/complaints/{complaint_id}/updates")
 def list_complaint_updates(
     complaint_id: str,
@@ -3665,19 +3688,16 @@ def create_complaint(payload: ComplaintCreate, current_user: CurrentUser = Depen
     if priority not in {"low", "medium", "high"}:
         raise HTTPException(status_code=400, detail="priority must be low, medium, or high")
 
-    if isinstance(payload.analysis, dict) and payload.analysis:
-        merged_analysis = dict(payload.analysis)
-    else:
-        merged_analysis = _analyze_text_bundle(
-            payload.title.strip(),
-            payload.description.strip(),
-            user_id=current_user.user_id,
-            attachments=payload.attachments,
-            evidence_types=payload.evidence_types,
-            attachment_contexts=[item.model_dump() for item in payload.attachment_contexts],
-            source_language=payload.source_language,
-            is_anonymous=bool(payload.is_anonymous),
-        )
+    merged_analysis = _analyze_text_bundle(
+        payload.title.strip(),
+        payload.description.strip(),
+        user_id=current_user.user_id,
+        attachments=payload.attachments,
+        evidence_types=payload.evidence_types,
+        attachment_contexts=[item.model_dump() for item in payload.attachment_contexts],
+        source_language=payload.source_language,
+        is_anonymous=bool(payload.is_anonymous),
+    )
     if payload.source_language:
         merged_analysis["source_language"] = payload.source_language
     merged_analysis["attachment_checks"] = _attachment_metadata_analysis(

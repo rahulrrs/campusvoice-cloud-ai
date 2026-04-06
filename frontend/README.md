@@ -48,6 +48,102 @@ Mode mapping for your 5 scenarios:
 - `4. dockerized local backend + CloudFront frontend`: edit [frontend/.env.cloudfront-tunnel](/d:/Dev/programming/online_complaint_system/frontend/.env.cloudfront-tunnel) with your tunnel URL, then run `npm run build:cloudfront-tunnel`
 - `5. EC2 dockerized backend + CloudFront frontend`: edit [frontend/.env.production](/d:/Dev/programming/online_complaint_system/frontend/.env.production) with your public backend URL, then run `npm run build:production`
 
+## Matching backend commands
+
+Use these backend commands with the frontend modes above.
+
+### 1. Local normal backend + local frontend
+
+Backend:
+
+```powershell
+cd d:\Dev\programming\online_complaint_system\backend
+python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
+```
+
+Frontend:
+
+```powershell
+cd d:\Dev\programming\online_complaint_system\frontend
+npm.cmd run dev:local-direct
+```
+
+### 2. Local normal backend + CloudFront frontend
+
+Backend:
+
+```powershell
+cd d:\Dev\programming\online_complaint_system\backend
+python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
+```
+
+Expose the backend with a tunnel such as:
+
+```powershell
+ngrok http 8000
+```
+
+Put that public URL into [frontend/.env.cloudfront-tunnel](/d:/Dev/programming/online_complaint_system/frontend/.env.cloudfront-tunnel), then build:
+
+```powershell
+cd d:\Dev\programming\online_complaint_system\frontend
+npm.cmd run build:cloudfront-tunnel
+```
+
+### 3. Dockerized local backend + local frontend
+
+Backend:
+
+```powershell
+cd d:\Dev\programming\online_complaint_system\backend
+docker compose up --build
+```
+
+Frontend:
+
+```powershell
+cd d:\Dev\programming\online_complaint_system\frontend
+npm.cmd run dev:local-docker
+```
+
+### 4. Dockerized local backend + CloudFront frontend
+
+Backend:
+
+```powershell
+cd d:\Dev\programming\online_complaint_system\backend
+docker compose up --build
+```
+
+Expose the backend with a tunnel such as:
+
+```powershell
+ngrok http 80
+```
+
+Put that public URL into [frontend/.env.cloudfront-tunnel](/d:/Dev/programming/online_complaint_system/frontend/.env.cloudfront-tunnel), then build:
+
+```powershell
+cd d:\Dev\programming\online_complaint_system\frontend
+npm.cmd run build:cloudfront-tunnel
+```
+
+### 5. EC2 dockerized backend + CloudFront frontend
+
+On the EC2 machine:
+
+```bash
+cd /path/to/online_complaint_system/backend
+docker compose up -d --build
+```
+
+Then set the EC2 or production API URL in [frontend/.env.production](/d:/Dev/programming/online_complaint_system/frontend/.env.production), and build:
+
+```powershell
+cd d:\Dev\programming\online_complaint_system\frontend
+npm.cmd run build:production
+```
+
 ## Production build
 
 Set the backend URL to your EC2 Nginx endpoint, then build:

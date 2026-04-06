@@ -46,6 +46,9 @@ const validatePassword = (value: string) => {
   return null;
 };
 
+const isExistingAccountError = (message: string) =>
+  message.includes("User already registered") || message.includes("UsernameExistsException");
+
 const PasswordChecklist = ({ value }: { value: string }) => (
   <div className="rounded-xl border bg-muted/20 p-3">
     <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Password rules</p>
@@ -172,6 +175,37 @@ const Auth = () => {
     }
   };
 
+  const handleResendResetCode = async () => {
+    const emailResult = emailSchema.safeParse(email);
+    if (!emailResult.success) {
+      setErrors((current) => ({
+        ...current,
+        email: emailResult.error.errors[0].message,
+      }));
+      toast({
+        title: "Enter your email",
+        description: "Add a valid email address before requesting another reset code.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const { error } = await requestPasswordReset(email);
+    if (error) {
+      toast({
+        title: "Could not resend code",
+        description: error.message,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    toast({
+      title: "Reset code sent",
+      description: "A new password reset code has been sent to your email.",
+    });
+  };
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!validateForm()) return;
@@ -270,15 +304,23 @@ const Auth = () => {
       } else {
         const { error } = await signUp(email, password, fullName);
         if (error) {
-          if (
-            error.message.includes("User already registered") ||
-            error.message.includes("UsernameExistsException")
-          ) {
-            toast({
-              title: "Account exists",
-              description: "An account with this email already exists. Please sign in instead.",
-              variant: "destructive",
-            });
+          if (isExistingAccountError(error.message)) {
+            const resendResult = await resendSignUpCode(email);
+
+            if (!resendResult.error) {
+              setIsVerifying(true);
+              setIsLogin(false);
+              toast({
+                title: "Finish verifying your email",
+                description: "This email already has a pending signup. We sent a fresh verification code.",
+              });
+            } else {
+              toast({
+                title: "Account exists",
+                description: "An account with this email already exists and is already verified. Please sign in instead.",
+                variant: "destructive",
+              });
+            }
           } else {
             toast({
               title: "Sign up failed",
@@ -478,6 +520,15 @@ const Auth = () => {
                       value={resetCode}
                       onChange={(event) => setResetCode(event.target.value)}
                     />
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => void handleResendResetCode()}
+                        className="text-sm font-medium text-primary hover:underline"
+                      >
+                        Resend reset code
+                      </button>
+                    </div>
                     <Label htmlFor="newPassword">New Password</Label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

@@ -103,8 +103,10 @@ const normalizeError = (error: unknown) => {
   return new Error("Unknown authentication error");
 };
 
+const normalizeEmailAddress = (email: string) => email.trim().toLowerCase();
+
 const buildCognitoUsername = (email: string) => {
-  const normalized = email.trim().toLowerCase();
+  const normalized = normalizeEmailAddress(email);
   return `u_${normalized.replace(/[^a-z0-9]/g, "_")}`;
 };
 
@@ -184,13 +186,14 @@ export const awsAuth = {
 
   async signUp(email: string, password: string, fullName: string) {
     try {
-      const generatedUsername = buildCognitoUsername(email);
+      const normalizedEmail = normalizeEmailAddress(email);
+      const generatedUsername = buildCognitoUsername(normalizedEmail);
       await cognitoSignUp({
         username: generatedUsername,
         password,
         options: {
           userAttributes: {
-            email,
+            email: normalizedEmail,
             name: fullName,
           },
         },
@@ -204,7 +207,7 @@ export const awsAuth = {
   async signIn(email: string, password: string) {
     try {
       await cognitoSignIn({
-        username: email,
+        username: normalizeEmailAddress(email),
         password,
       });
       clearCachedSession();
@@ -240,7 +243,7 @@ export const awsAuth = {
   async requestPasswordReset(email: string) {
     try {
       await cognitoResetPassword({
-        username: email.trim().toLowerCase(),
+        username: normalizeEmailAddress(email),
       });
       return { error: null as Error | null };
     } catch (error) {
@@ -251,7 +254,7 @@ export const awsAuth = {
   async confirmPasswordReset(email: string, code: string, newPassword: string) {
     try {
       await cognitoConfirmResetPassword({
-        username: email.trim().toLowerCase(),
+        username: normalizeEmailAddress(email),
         confirmationCode: code.trim(),
         newPassword,
       });
@@ -793,6 +796,10 @@ export const complaintsApi = {
     return authFetch<ComplaintRecord[]>(`/complaints${query ? `?${query}` : ""}`);
   },
   getComplaint: (complaintId: string) => authFetch<ComplaintRecord>(`/complaints/${complaintId}`),
+  deleteComplaint: (complaintId: string) =>
+    authFetch<{ ok: boolean; id: string }>(`/complaints/${complaintId}`, {
+      method: "DELETE",
+    }),
   listComplaintUpdates: (complaintId: string) =>
     authFetch<ComplaintUpdateRecord[]>(`/complaints/${complaintId}/updates`),
   createComplaintUpdate: (complaintId: string, payload: ComplaintUpdatePayload) =>
