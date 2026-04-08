@@ -53,6 +53,13 @@ ALTER TABLE complaints
   ADD COLUMN IF NOT EXISTS admin_notes TEXT;
 
 ALTER TABLE complaints
+  ADD COLUMN IF NOT EXISTS student_name TEXT,
+  ADD COLUMN IF NOT EXISTS student_email TEXT,
+  ADD COLUMN IF NOT EXISTS student_phone TEXT,
+  ADD COLUMN IF NOT EXISTS student_department TEXT,
+  ADD COLUMN IF NOT EXISTS student_registration_number TEXT;
+
+ALTER TABLE complaints
   ADD COLUMN IF NOT EXISTS last_student_update_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS last_public_admin_update_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS last_user_viewed_updates_at TIMESTAMPTZ,

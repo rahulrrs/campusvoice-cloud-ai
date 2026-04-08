@@ -20,7 +20,7 @@ const AdminLogin = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { signIn, user, loading } = useAuth();
+  const { signIn, signOut, user, loading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -59,7 +59,11 @@ const AdminLogin = () => {
     setIsSubmitting(true);
 
     try {
-      const { error } = await signIn(email, password);
+      if (user) {
+        await signOut();
+      }
+
+      const { error } = await signIn(email.trim(), password);
       if (error) {
         toast({
           title: "Admin login failed",
@@ -87,10 +91,24 @@ const AdminLogin = () => {
           variant: "destructive",
         });
       }
+    } catch (error) {
+      toast({
+        title: "Admin login failed",
+        description: error instanceof Error ? error.message : "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      });
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -108,6 +126,14 @@ const AdminLogin = () => {
             <CardDescription>Sign in with an admin email to manage predictions</CardDescription>
           </CardHeader>
           <CardContent>
+            {user && (
+              <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                <p className="font-medium">Signed in as {user.email ?? "another account"}.</p>
+                <p className="mt-1 text-amber-800">
+                  Continuing will sign out this account and switch to the admin account you enter below.
+                </p>
+              </div>
+            )}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="admin-email">Admin Email</Label>
@@ -161,7 +187,7 @@ const AdminLogin = () => {
                 </div>
               </div>
 
-              <Button type="submit" className="w-full" variant="hero" disabled={isSubmitting}>
+              <Button type="submit" className="w-full" variant="hero" disabled={isSubmitting || loading}>
                 {isSubmitting ? "Please wait..." : "Login as Admin"}
               </Button>
             </form>

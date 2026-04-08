@@ -133,8 +133,8 @@ function AppRoutes() {
       return () => window.cancelIdleCallback(idleId);
     }
 
-    const timeoutId = window.setTimeout(preload, 180);
-    return () => window.clearTimeout(timeoutId);
+    const timeoutId = globalThis.setTimeout(preload, 180);
+    return () => globalThis.clearTimeout(timeoutId);
   }, [location.pathname, user]);
 
   return (

@@ -19,6 +19,11 @@ export type PendingComplaintData = {
   evidence_types?: string[];
   source_language?: string;
   analysis?: Record<string, unknown>;
+  student_name?: string;
+  student_email?: string;
+  student_phone?: string;
+  student_department?: string;
+  student_registration_number?: string;
 };
 
 export type PendingComplaint = {

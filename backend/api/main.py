@@ -9,6 +9,7 @@ import socket
 import subprocess
 import sys
 import threading
+import urllib.request
 import uuid
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
@@ -174,6 +175,10 @@ def get_settings() -> Settings:
 settings = get_settings()
 logger = logging.getLogger(__name__)
 duplicate_engine = SemanticDuplicateEngine()
+_schema_check_lock = threading.Lock()
+_schema_ready = False
+_schema_last_failure_at: datetime | None = None
+_SCHEMA_RETRY_COOLDOWN = timedelta(minutes=5)
 
 
 def _resolve_backbone_source() -> str:
@@ -278,18 +283,94 @@ def _jwks_url() -> str:
     )
 
 
-_jwks_client_lock = threading.Lock()
-_jwks_client: jwt.PyJWKClient | None = None
+_JWKS_FETCH_TIMEOUT_SECONDS = 4
+_JWKS_CACHE_TTL = timedelta(hours=6)
+_jwks_cache_lock = threading.Lock()
+_jwks_cache: dict[str, Any] = {
+    "fetched_at": None,
+    "keys_by_kid": {},
+}
 
 
-def _get_jwks_client() -> jwt.PyJWKClient:
-    global _jwks_client
-    if _jwks_client is not None:
-        return _jwks_client
-    with _jwks_client_lock:
-        if _jwks_client is None:
-            _jwks_client = jwt.PyJWKClient(_jwks_url())
-    return _jwks_client
+def _fetch_jwks_keys() -> dict[str, dict[str, Any]]:
+    request = urllib.request.Request(_jwks_url(), headers={"Accept": "application/json"})
+    with urllib.request.urlopen(request, timeout=_JWKS_FETCH_TIMEOUT_SECONDS) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+
+    keys = payload.get("keys")
+    if not isinstance(keys, list):
+        raise ValueError("JWKS response missing keys array")
+
+    keys_by_kid: dict[str, dict[str, Any]] = {}
+    for item in keys:
+        if not isinstance(item, dict):
+            continue
+        kid = item.get("kid")
+        if isinstance(kid, str) and kid:
+            keys_by_kid[kid] = item
+
+    if not keys_by_kid:
+        raise ValueError("JWKS response did not include usable signing keys")
+
+    return keys_by_kid
+
+
+def _get_cached_jwks_keys(force_refresh: bool = False) -> dict[str, dict[str, Any]]:
+    now = datetime.now(timezone.utc)
+    with _jwks_cache_lock:
+        fetched_at = _jwks_cache.get("fetched_at")
+        keys_by_kid = _jwks_cache.get("keys_by_kid") or {}
+        if (
+            not force_refresh
+            and isinstance(fetched_at, datetime)
+            and now - fetched_at < _JWKS_CACHE_TTL
+            and keys_by_kid
+        ):
+            return keys_by_kid
+
+    try:
+        fresh_keys = _fetch_jwks_keys()
+    except Exception as exc:
+        with _jwks_cache_lock:
+            cached_keys = _jwks_cache.get("keys_by_kid") or {}
+        if cached_keys:
+            logger.warning("Falling back to cached Cognito JWKS after refresh failure: %s", exc)
+            return cached_keys
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication key lookup failed",
+        ) from exc
+
+    with _jwks_cache_lock:
+        _jwks_cache["fetched_at"] = now
+        _jwks_cache["keys_by_kid"] = fresh_keys
+
+    return fresh_keys
+
+
+def _get_signing_key_for_token(token: str):
+    try:
+        header = jwt.get_unverified_header(token)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token header") from exc
+
+    kid = header.get("kid")
+    if not isinstance(kid, str) or not kid:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token missing kid")
+
+    keys_by_kid = _get_cached_jwks_keys()
+    jwk_payload = keys_by_kid.get(kid)
+    if jwk_payload is None:
+        keys_by_kid = _get_cached_jwks_keys(force_refresh=True)
+        jwk_payload = keys_by_kid.get(kid)
+
+    if jwk_payload is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unknown token signing key")
+
+    try:
+        return jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(jwk_payload))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token signing key") from exc
 
 
 class CurrentUser(BaseModel):
@@ -551,10 +632,10 @@ def get_current_user(authorization: str | None = Header(default=None)) -> Curren
     )
 
     try:
-        signing_key = _get_jwks_client().get_signing_key_from_jwt(token)
+        signing_key = _get_signing_key_for_token(token)
         payload = jwt.decode(
             token,
-            signing_key.key,
+            signing_key,
             algorithms=["RS256"],
             issuer=issuer,
             audience=settings.cognito_app_client_id,
@@ -645,6 +726,14 @@ def _serialize_row(row: dict[str, Any]) -> dict[str, Any]:
     serialized["quarantined_reason"] = str(serialized.get("quarantined_reason") or "").strip() or None
     serialized["auto_route_version"] = str(serialized.get("auto_route_version") or "rules-v1")
     serialized["escalation_level"] = str(serialized.get("escalation_level") or "").strip() or None
+    for text_key in (
+        "student_name",
+        "student_email",
+        "student_phone",
+        "student_department",
+        "student_registration_number",
+    ):
+        serialized[text_key] = str(serialized.get(text_key) or "").strip() or None
     last_admin_update = row.get("last_public_admin_update_at")
     last_user_seen = row.get("last_user_viewed_updates_at")
     last_student_update = row.get("last_student_update_at")
@@ -1320,6 +1409,11 @@ class ComplaintCreate(BaseModel):
     attachment_contexts: list[AttachmentContext] = Field(default_factory=list)
     source_language: str | None = None
     analysis: dict[str, Any] = Field(default_factory=dict)
+    student_name: str | None = None
+    student_email: str | None = None
+    student_phone: str | None = None
+    student_department: str | None = None
+    student_registration_number: str | None = None
 
 
 class FAQItem(BaseModel):
@@ -1973,6 +2067,16 @@ def _ensure_schema() -> None:
             cur.execute(
                 """
                 ALTER TABLE complaints
+                ADD COLUMN IF NOT EXISTS student_name TEXT,
+                ADD COLUMN IF NOT EXISTS student_email TEXT,
+                ADD COLUMN IF NOT EXISTS student_phone TEXT,
+                ADD COLUMN IF NOT EXISTS student_department TEXT,
+                ADD COLUMN IF NOT EXISTS student_registration_number TEXT
+                """
+            )
+            cur.execute(
+                """
+                ALTER TABLE complaints
                 ADD COLUMN IF NOT EXISTS last_student_update_at TIMESTAMPTZ,
                 ADD COLUMN IF NOT EXISTS last_public_admin_update_at TIMESTAMPTZ,
                 ADD COLUMN IF NOT EXISTS last_user_viewed_updates_at TIMESTAMPTZ,
@@ -2141,6 +2245,34 @@ def _ensure_schema() -> None:
                 """
             )
         conn.commit()
+
+
+def _ensure_schema_best_effort(force: bool = False) -> bool:
+    global _schema_ready, _schema_last_failure_at
+
+    if _schema_ready and not force:
+        return True
+
+    with _schema_check_lock:
+        if _schema_ready and not force:
+            return True
+
+        if (
+            not force
+            and _schema_last_failure_at is not None
+            and datetime.now(timezone.utc) - _schema_last_failure_at < _SCHEMA_RETRY_COOLDOWN
+        ):
+            return False
+
+        try:
+            _ensure_schema()
+            _schema_ready = True
+            _schema_last_failure_at = None
+            return True
+        except Exception as exc:
+            _schema_last_failure_at = datetime.now(timezone.utc)
+            logger.warning("Skipping schema sync because it could not complete: %s", exc)
+            return False
 
 
 def _sync_models_on_startup() -> None:
@@ -3400,11 +3532,7 @@ def update_admin_user_access(
 @app.on_event("startup")
 def startup_checks() -> None:
     _sync_models_on_startup()
-    try:
-        _ensure_schema()
-    except Exception as exc:
-        # Keep API bootable if DB is temporarily unreachable; endpoints needing DB will still fail clearly.
-        logger.warning("Skipping startup schema check because DB is unreachable: %s", exc)
+    _ensure_schema_best_effort(force=True)
 
 
 @app.post("/predict")
@@ -3460,6 +3588,7 @@ def list_complaints(
                 f"""
                 SELECT id, user_id, title, description, category, priority, department, status,
                        is_anonymous, attachments, evidence_types, analysis, source_language,
+                       student_name, student_email, student_phone, student_department, student_registration_number,
                        decision_state, risk_score, routing_confidence, decision_source, decision_reason,
                        fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version,
                        last_student_update_at, last_public_admin_update_at, last_user_viewed_updates_at, last_admin_viewed_updates_at,
@@ -3489,6 +3618,7 @@ def get_complaint_detail(
                 columns="""
                 id, user_id, title, description, category, priority, department, status,
                 is_anonymous, attachments, evidence_types, analysis, source_language,
+                student_name, student_email, student_phone, student_department, student_registration_number,
                 decision_state, risk_score, routing_confidence, decision_source, decision_reason,
                 fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version,
                 last_student_update_at, last_public_admin_update_at, last_user_viewed_updates_at, last_admin_viewed_updates_at,
@@ -3641,6 +3771,7 @@ def reopen_complaint(
                 WHERE id = %s::uuid AND user_id = %s
                 RETURNING id, user_id, title, description, category, priority, department, status,
                           assigned_to, admin_notes, is_anonymous, attachments, evidence_types, analysis, source_language,
+                          student_name, student_email, student_phone, student_department, student_registration_number,
                           decision_state, risk_score, routing_confidence, decision_source, decision_reason,
                           fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version,
                           last_student_update_at, last_public_admin_update_at, last_user_viewed_updates_at, last_admin_viewed_updates_at,
@@ -3684,6 +3815,7 @@ def reopen_complaint(
 
 @app.post("/complaints", status_code=201)
 def create_complaint(payload: ComplaintCreate, current_user: CurrentUser = Depends(get_current_user)):
+    _ensure_schema_best_effort()
     priority = payload.priority.lower().strip()
     if priority not in {"low", "medium", "high"}:
         raise HTTPException(status_code=400, detail="priority must be low, medium, or high")
@@ -3739,15 +3871,17 @@ def create_complaint(payload: ComplaintCreate, current_user: CurrentUser = Depen
                 INSERT INTO complaints (
                   id, user_id, title, description, category, priority, department, status,
                   is_anonymous, attachments, evidence_types, analysis, source_language,
+                  student_name, student_email, student_phone, student_department, student_registration_number,
                   submitted_at, pending_at, last_student_update_at,
                   decision_state, risk_score, routing_confidence, decision_source, decision_reason,
                   fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version
                 ) VALUES (
-                  %s::uuid, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                  %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                  %s::uuid, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                  %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 RETURNING id, user_id, title, description, category, priority, department, status,
                           is_anonymous, attachments, evidence_types, analysis, source_language,
+                          student_name, student_email, student_phone, student_department, student_registration_number,
                           decision_state, risk_score, routing_confidence, decision_source, decision_reason,
                           fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version,
                           last_student_update_at, last_public_admin_update_at, last_user_viewed_updates_at, last_admin_viewed_updates_at,
@@ -3768,6 +3902,11 @@ def create_complaint(payload: ComplaintCreate, current_user: CurrentUser = Depen
                     Json(payload.evidence_types),
                     Json(merged_analysis),
                     payload.source_language or merged_analysis.get("source_language"),
+                    (payload.student_name or "").strip() or None,
+                    (payload.student_email or current_user.email or "").strip() or None,
+                    (payload.student_phone or "").strip() or None,
+                    (payload.student_department or "").strip() or None,
+                    (payload.student_registration_number or "").strip() or None,
                     datetime.now(timezone.utc),
                     datetime.now(timezone.utc) if status_value == "pending" else None,
                     datetime.now(timezone.utc),
@@ -3846,6 +3985,7 @@ def approve_complaint(
                 WHERE id = %s::uuid
                 RETURNING id, user_id, title, description, category, priority, department, status,
                           assigned_to, admin_notes, is_anonymous, attachments, evidence_types, analysis, source_language,
+                          student_name, student_email, student_phone, student_department, student_registration_number,
                           decision_state, risk_score, routing_confidence, decision_source, decision_reason,
                           fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version,
                           submitted_at, pending_at, in_progress_at, resolved_at, created_at, updated_at
@@ -3946,6 +4086,7 @@ def list_all_complaints(
     q: str | None = None,
     admin_user: CurrentUser = Depends(require_admin),
 ):
+    _ensure_schema_best_effort()
     del admin_user
     filters, params = _build_admin_complaint_filters(
         status=status,
@@ -3956,24 +4097,32 @@ def list_all_complaints(
     )
     where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
 
-    with get_db_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                f"""
-                SELECT id, user_id, title, description, category, priority, department, status,
-                       assigned_to, admin_notes, is_anonymous, attachments, evidence_types, analysis, source_language,
-                       decision_state, risk_score, routing_confidence, decision_source, decision_reason,
-                       fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version,
-                       last_student_update_at, last_public_admin_update_at, last_user_viewed_updates_at, last_admin_viewed_updates_at,
-                       resolution_summary, reopened_at, reopen_count,
-                       submitted_at, pending_at, in_progress_at, resolved_at, created_at, updated_at
-                FROM complaints
-                {where_clause}
-                ORDER BY created_at DESC
-                """,
-                tuple(params),
-            )
-            rows = cur.fetchall()
+    try:
+        with get_db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT id, user_id, title, description, category, priority, department, status,
+                           assigned_to, admin_notes, is_anonymous, attachments, evidence_types, analysis, source_language,
+                           student_name, student_email, student_phone, student_department, student_registration_number,
+                           decision_state, risk_score, routing_confidence, decision_source, decision_reason,
+                           fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version,
+                           last_student_update_at, last_public_admin_update_at, last_user_viewed_updates_at, last_admin_viewed_updates_at,
+                           resolution_summary, reopened_at, reopen_count,
+                           submitted_at, pending_at, in_progress_at, resolved_at, created_at, updated_at
+                    FROM complaints
+                    {where_clause}
+                    ORDER BY created_at DESC
+                    """,
+                    tuple(params),
+                )
+                rows = cur.fetchall()
+    except psycopg2.OperationalError as exc:
+        logger.warning("Admin complaints are temporarily unavailable because the database connection failed: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Admin complaints are temporarily unavailable because the database connection timed out.",
+        ) from exc
     return [_serialize_row(row) for row in rows]
 
 
@@ -3996,20 +4145,27 @@ def export_complaints_report(
         q=q,
     )
     where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
-    with get_db_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                f"""
-                SELECT id, title, category, priority, department, assigned_to, status,
-                       is_anonymous, reopen_count,
-                       submitted_at, pending_at, in_progress_at, resolved_at, created_at, updated_at
-                FROM complaints
-                {where_clause}
-                ORDER BY created_at DESC
-                """,
-                tuple(params),
-            )
-            rows = cur.fetchall()
+    try:
+        with get_db_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT id, title, category, priority, department, assigned_to, status,
+                           is_anonymous, reopen_count,
+                           submitted_at, pending_at, in_progress_at, resolved_at, created_at, updated_at
+                    FROM complaints
+                    {where_clause}
+                    ORDER BY created_at DESC
+                    """,
+                    tuple(params),
+                )
+                rows = cur.fetchall()
+    except psycopg2.OperationalError as exc:
+        logger.warning("Complaint report export is temporarily unavailable because the database connection failed: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Complaint export is temporarily unavailable because the database connection timed out.",
+        ) from exc
 
     report_rows = [_complaint_report_row(row) for row in rows]
     export_format = format.strip().lower()
@@ -4188,7 +4344,6 @@ def auto_apply_prediction(
     complaint_id: str,
     admin_user: CurrentUser = Depends(require_admin),
 ):
-    del admin_user
     with get_db_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -4234,6 +4389,7 @@ def auto_apply_prediction(
                 WHERE id = %s::uuid
                 RETURNING id, user_id, title, description, category, priority, department, status,
                           assigned_to, admin_notes, is_anonymous, attachments, evidence_types, analysis, source_language,
+                          student_name, student_email, student_phone, student_department, student_registration_number,
                           decision_state, risk_score, routing_confidence, decision_source, decision_reason,
                           fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version,
                           last_student_update_at, last_public_admin_update_at, last_user_viewed_updates_at, last_admin_viewed_updates_at,
@@ -4376,6 +4532,7 @@ def update_complaint_by_admin(
                 WHERE id = %s::uuid
                 RETURNING id, user_id, title, description, category, priority, department, status,
                           assigned_to, admin_notes, is_anonymous, attachments, evidence_types, analysis, source_language,
+                          student_name, student_email, student_phone, student_department, student_registration_number,
                           decision_state, risk_score, routing_confidence, decision_source, decision_reason,
                           fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version,
                           last_student_update_at, last_public_admin_update_at, last_user_viewed_updates_at, last_admin_viewed_updates_at,
@@ -4447,150 +4604,157 @@ def list_faq():
 
 @app.get("/notifications")
 def list_notifications(current_user: CurrentUser = Depends(get_current_user)):
-    with get_db_conn() as conn:
-        with conn.cursor() as cur:
-            if current_user.is_admin:
-                cur.execute(
-                    """
-                    SELECT id, title, category, status, department, priority,
-                           last_student_update_at, last_admin_viewed_updates_at,
-                           assigned_to, submitted_at
-                    FROM complaints
-                    ORDER BY created_at DESC
-                    """
-                )
-                rows = cur.fetchall()
+    try:
+        with get_db_conn() as conn:
+            with conn.cursor() as cur:
+                if current_user.is_admin:
+                    cur.execute(
+                        """
+                        SELECT id, title, category, status, department, priority,
+                               last_student_update_at, last_admin_viewed_updates_at,
+                               assigned_to, submitted_at
+                        FROM complaints
+                        ORDER BY created_at DESC
+                        """
+                    )
+                    rows = cur.fetchall()
 
-                student_updates = [
-                    _notification_item(
-                        complaint_id=str(row["id"]),
-                        title=str(row.get("title") or "Complaint"),
-                        category=str(row.get("category") or "Uncategorized"),
-                        status_value=str(row.get("status") or "pending"),
-                        timestamp=row.get("last_student_update_at"),
-                        group_key="student_updates",
-                        group_label="New Student Updates",
-                        department=row.get("department"),
-                        priority=row.get("priority"),
-                        preview="A student added a new update.",
-                    )
-                    for row in rows
-                    if isinstance(row.get("last_student_update_at"), datetime)
-                    and (
-                        not isinstance(row.get("last_admin_viewed_updates_at"), datetime)
-                        or row["last_student_update_at"] > row["last_admin_viewed_updates_at"]
-                    )
-                ]
-                awaiting_assignment = [
-                    _notification_item(
-                        complaint_id=str(row["id"]),
-                        title=str(row.get("title") or "Complaint"),
-                        category=str(row.get("category") or "Uncategorized"),
-                        status_value=str(row.get("status") or "pending"),
-                        timestamp=row.get("submitted_at"),
-                        group_key="awaiting_assignment",
-                        group_label="Awaiting Assignment",
-                        department=row.get("department"),
-                        priority=row.get("priority"),
-                        preview="This complaint is active and still unassigned.",
-                    )
-                    for row in rows
-                    if str(row.get("status") or "") in {"submitted", "pending", "in_progress"}
-                    and not str(row.get("assigned_to") or "").strip()
-                    and (
-                        not isinstance(row.get("last_admin_viewed_updates_at"), datetime)
-                        or (
-                            isinstance(row.get("submitted_at"), datetime)
-                            and row["submitted_at"] > row["last_admin_viewed_updates_at"]
+                    student_updates = [
+                        _notification_item(
+                            complaint_id=str(row["id"]),
+                            title=str(row.get("title") or "Complaint"),
+                            category=str(row.get("category") or "Uncategorized"),
+                            status_value=str(row.get("status") or "pending"),
+                            timestamp=row.get("last_student_update_at"),
+                            group_key="student_updates",
+                            group_label="New Student Updates",
+                            department=row.get("department"),
+                            priority=row.get("priority"),
+                            preview="A student added a new update.",
                         )
-                    )
-                ]
-                urgent_queue = [
-                    _notification_item(
-                        complaint_id=str(row["id"]),
-                        title=str(row.get("title") or "Complaint"),
-                        category=str(row.get("category") or "Uncategorized"),
-                        status_value=str(row.get("status") or "pending"),
-                        timestamp=row.get("submitted_at"),
-                        group_key="urgent_queue",
-                        group_label="Urgent Queue",
-                        department=row.get("department"),
-                        priority=row.get("priority"),
-                        preview="This complaint is marked high priority and still active.",
-                    )
-                    for row in rows
-                    if str(row.get("priority") or "").lower() == "high"
-                    and str(row.get("status") or "") in {"submitted", "pending", "in_progress"}
-                    and (
-                        not isinstance(row.get("last_admin_viewed_updates_at"), datetime)
-                        or (
-                            isinstance(row.get("submitted_at"), datetime)
-                            and row["submitted_at"] > row["last_admin_viewed_updates_at"]
+                        for row in rows
+                        if isinstance(row.get("last_student_update_at"), datetime)
+                        and (
+                            not isinstance(row.get("last_admin_viewed_updates_at"), datetime)
+                            or row["last_student_update_at"] > row["last_admin_viewed_updates_at"]
                         )
+                    ]
+                    awaiting_assignment = [
+                        _notification_item(
+                            complaint_id=str(row["id"]),
+                            title=str(row.get("title") or "Complaint"),
+                            category=str(row.get("category") or "Uncategorized"),
+                            status_value=str(row.get("status") or "pending"),
+                            timestamp=row.get("submitted_at"),
+                            group_key="awaiting_assignment",
+                            group_label="Awaiting Assignment",
+                            department=row.get("department"),
+                            priority=row.get("priority"),
+                            preview="This complaint is active and still unassigned.",
+                        )
+                        for row in rows
+                        if str(row.get("status") or "") in {"submitted", "pending", "in_progress"}
+                        and not str(row.get("assigned_to") or "").strip()
+                        and (
+                            not isinstance(row.get("last_admin_viewed_updates_at"), datetime)
+                            or (
+                                isinstance(row.get("submitted_at"), datetime)
+                                and row["submitted_at"] > row["last_admin_viewed_updates_at"]
+                            )
+                        )
+                    ]
+                    urgent_queue = [
+                        _notification_item(
+                            complaint_id=str(row["id"]),
+                            title=str(row.get("title") or "Complaint"),
+                            category=str(row.get("category") or "Uncategorized"),
+                            status_value=str(row.get("status") or "pending"),
+                            timestamp=row.get("submitted_at"),
+                            group_key="urgent_queue",
+                            group_label="Urgent Queue",
+                            department=row.get("department"),
+                            priority=row.get("priority"),
+                            preview="This complaint is marked high priority and still active.",
+                        )
+                        for row in rows
+                        if str(row.get("priority") or "").lower() == "high"
+                        and str(row.get("status") or "") in {"submitted", "pending", "in_progress"}
+                        and (
+                            not isinstance(row.get("last_admin_viewed_updates_at"), datetime)
+                            or (
+                                isinstance(row.get("submitted_at"), datetime)
+                                and row["submitted_at"] > row["last_admin_viewed_updates_at"]
+                            )
+                        )
+                    ]
+                    groups = [
+                        {"key": "student_updates", "label": "New Student Updates", "items": student_updates},
+                        {"key": "awaiting_assignment", "label": "Awaiting Assignment", "items": awaiting_assignment},
+                        {"key": "urgent_queue", "label": "Urgent Queue", "items": urgent_queue},
+                    ]
+                else:
+                    cur.execute(
+                        """
+                        SELECT id, title, category, status, department, priority,
+                               last_public_admin_update_at, last_user_viewed_updates_at, resolved_at
+                        FROM complaints
+                        WHERE user_id = %s
+                        ORDER BY created_at DESC
+                        """,
+                        (current_user.user_id,),
                     )
-                ]
-                groups = [
-                    {"key": "student_updates", "label": "New Student Updates", "items": student_updates},
-                    {"key": "awaiting_assignment", "label": "Awaiting Assignment", "items": awaiting_assignment},
-                    {"key": "urgent_queue", "label": "Urgent Queue", "items": urgent_queue},
-                ]
-            else:
-                cur.execute(
-                    """
-                    SELECT id, title, category, status, department, priority,
-                           last_public_admin_update_at, last_user_viewed_updates_at, resolved_at
-                    FROM complaints
-                    WHERE user_id = %s
-                    ORDER BY created_at DESC
-                    """,
-                    (current_user.user_id,),
-                )
-                rows = cur.fetchall()
-                new_updates = [
-                    _notification_item(
-                        complaint_id=str(row["id"]),
-                        title=str(row.get("title") or "Complaint"),
-                        category=str(row.get("category") or "Uncategorized"),
-                        status_value=str(row.get("status") or "pending"),
-                        timestamp=row.get("last_public_admin_update_at"),
-                        group_key="new_updates",
-                        group_label="New Updates",
-                        department=row.get("department"),
-                        priority=row.get("priority"),
-                        preview="A new public update is available from the complaint team.",
-                    )
-                    for row in rows
-                    if isinstance(row.get("last_public_admin_update_at"), datetime)
-                    and (
-                        not isinstance(row.get("last_user_viewed_updates_at"), datetime)
-                        or row["last_public_admin_update_at"] > row["last_user_viewed_updates_at"]
-                    )
-                ]
-                resolved_recently = [
-                    _notification_item(
-                        complaint_id=str(row["id"]),
-                        title=str(row.get("title") or "Complaint"),
-                        category=str(row.get("category") or "Uncategorized"),
-                        status_value=str(row.get("status") or "resolved"),
-                        timestamp=row.get("resolved_at"),
-                        group_key="resolved_recently",
-                        group_label="Recently Resolved",
-                        department=row.get("department"),
-                        priority=row.get("priority"),
-                        preview="This complaint was recently marked resolved.",
-                    )
-                    for row in rows
-                    if str(row.get("status") or "") == "resolved"
-                    and isinstance(row.get("resolved_at"), datetime)
-                    and (
-                        not isinstance(row.get("last_user_viewed_updates_at"), datetime)
-                        or row["resolved_at"] > row["last_user_viewed_updates_at"]
-                    )
-                ]
-                groups = [
-                    {"key": "new_updates", "label": "New Updates", "items": new_updates},
-                    {"key": "resolved_recently", "label": "Recently Resolved", "items": resolved_recently},
-                ]
+                    rows = cur.fetchall()
+                    new_updates = [
+                        _notification_item(
+                            complaint_id=str(row["id"]),
+                            title=str(row.get("title") or "Complaint"),
+                            category=str(row.get("category") or "Uncategorized"),
+                            status_value=str(row.get("status") or "pending"),
+                            timestamp=row.get("last_public_admin_update_at"),
+                            group_key="new_updates",
+                            group_label="New Updates",
+                            department=row.get("department"),
+                            priority=row.get("priority"),
+                            preview="A new public update is available from the complaint team.",
+                        )
+                        for row in rows
+                        if isinstance(row.get("last_public_admin_update_at"), datetime)
+                        and (
+                            not isinstance(row.get("last_user_viewed_updates_at"), datetime)
+                            or row["last_public_admin_update_at"] > row["last_user_viewed_updates_at"]
+                        )
+                    ]
+                    resolved_recently = [
+                        _notification_item(
+                            complaint_id=str(row["id"]),
+                            title=str(row.get("title") or "Complaint"),
+                            category=str(row.get("category") or "Uncategorized"),
+                            status_value=str(row.get("status") or "resolved"),
+                            timestamp=row.get("resolved_at"),
+                            group_key="resolved_recently",
+                            group_label="Recently Resolved",
+                            department=row.get("department"),
+                            priority=row.get("priority"),
+                            preview="This complaint was recently marked resolved.",
+                        )
+                        for row in rows
+                        if str(row.get("status") or "") == "resolved"
+                        and isinstance(row.get("resolved_at"), datetime)
+                        and (
+                            not isinstance(row.get("last_user_viewed_updates_at"), datetime)
+                            or row["resolved_at"] > row["last_user_viewed_updates_at"]
+                        )
+                    ]
+                    groups = [
+                        {"key": "new_updates", "label": "New Updates", "items": new_updates},
+                        {"key": "resolved_recently", "label": "Recently Resolved", "items": resolved_recently},
+                    ]
+    except psycopg2.OperationalError as exc:
+        logger.warning("Notifications are temporarily unavailable because the database connection failed: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Notifications are temporarily unavailable because the database connection timed out.",
+        ) from exc
 
     normalized_groups = [
         {
@@ -4622,70 +4786,77 @@ def mark_notifications_read(
     now = datetime.now(timezone.utc)
     viewed_column = "last_admin_viewed_updates_at" if current_user.is_admin else "last_user_viewed_updates_at"
 
-    with get_db_conn() as conn:
-        with conn.cursor() as cur:
-            if payload.mark_all:
-                if current_user.is_admin:
-                    cur.execute(
-                        f"""
-                        UPDATE complaints
-                        SET {viewed_column} = %s
-                        WHERE
-                          (last_student_update_at IS NOT NULL AND ({viewed_column} IS NULL OR last_student_update_at > {viewed_column}))
-                          OR (
-                            status IN ('submitted', 'pending', 'in_progress')
-                            AND assigned_to IS NULL
-                            AND submitted_at IS NOT NULL
-                            AND ({viewed_column} IS NULL OR submitted_at > {viewed_column})
-                          )
-                          OR (
-                            priority = 'high'
-                            AND status IN ('submitted', 'pending', 'in_progress')
-                            AND submitted_at IS NOT NULL
-                            AND ({viewed_column} IS NULL OR submitted_at > {viewed_column})
-                          )
-                        """
-                        ,
-                        (now,),
-                    )
+    try:
+        with get_db_conn() as conn:
+            with conn.cursor() as cur:
+                if payload.mark_all:
+                    if current_user.is_admin:
+                        cur.execute(
+                            f"""
+                            UPDATE complaints
+                            SET {viewed_column} = %s
+                            WHERE
+                              (last_student_update_at IS NOT NULL AND ({viewed_column} IS NULL OR last_student_update_at > {viewed_column}))
+                              OR (
+                                status IN ('submitted', 'pending', 'in_progress')
+                                AND assigned_to IS NULL
+                                AND submitted_at IS NOT NULL
+                                AND ({viewed_column} IS NULL OR submitted_at > {viewed_column})
+                              )
+                              OR (
+                                priority = 'high'
+                                AND status IN ('submitted', 'pending', 'in_progress')
+                                AND submitted_at IS NOT NULL
+                                AND ({viewed_column} IS NULL OR submitted_at > {viewed_column})
+                              )
+                            """
+                            ,
+                            (now,),
+                        )
+                    else:
+                        cur.execute(
+                            f"""
+                            UPDATE complaints
+                            SET {viewed_column} = %s
+                            WHERE user_id = %s
+                              AND (
+                                (last_public_admin_update_at IS NOT NULL AND ({viewed_column} IS NULL OR last_public_admin_update_at > {viewed_column}))
+                                OR (resolved_at IS NOT NULL AND status = 'resolved' AND ({viewed_column} IS NULL OR resolved_at > {viewed_column}))
+                              )
+                            """
+                            ,
+                            (now, current_user.user_id),
+                        )
+                elif payload.complaint_id:
+                    if current_user.is_admin:
+                        cur.execute(
+                            f"""
+                            UPDATE complaints
+                            SET {viewed_column} = %s
+                            WHERE id = %s::uuid
+                            """
+                            ,
+                            (now, payload.complaint_id),
+                        )
+                    else:
+                        cur.execute(
+                            f"""
+                            UPDATE complaints
+                            SET {viewed_column} = %s
+                            WHERE id = %s::uuid AND user_id = %s
+                            """
+                            ,
+                            (now, payload.complaint_id, current_user.user_id),
+                        )
                 else:
-                    cur.execute(
-                        f"""
-                        UPDATE complaints
-                        SET {viewed_column} = %s
-                        WHERE user_id = %s
-                          AND (
-                            (last_public_admin_update_at IS NOT NULL AND ({viewed_column} IS NULL OR last_public_admin_update_at > {viewed_column}))
-                            OR (resolved_at IS NOT NULL AND status = 'resolved' AND ({viewed_column} IS NULL OR resolved_at > {viewed_column}))
-                          )
-                        """
-                        ,
-                        (now, current_user.user_id),
-                    )
-            elif payload.complaint_id:
-                if current_user.is_admin:
-                    cur.execute(
-                        f"""
-                        UPDATE complaints
-                        SET {viewed_column} = %s
-                        WHERE id = %s::uuid
-                        """
-                        ,
-                        (now, payload.complaint_id),
-                    )
-                else:
-                    cur.execute(
-                        f"""
-                        UPDATE complaints
-                        SET {viewed_column} = %s
-                        WHERE id = %s::uuid AND user_id = %s
-                        """
-                        ,
-                        (now, payload.complaint_id, current_user.user_id),
-                    )
-            else:
-                raise HTTPException(status_code=400, detail="complaint_id or mark_all is required")
-        conn.commit()
+                    raise HTTPException(status_code=400, detail="complaint_id or mark_all is required")
+            conn.commit()
+    except psycopg2.OperationalError as exc:
+        logger.warning("Notification read state could not be updated because the database connection failed: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Notifications are temporarily unavailable because the database connection timed out.",
+        ) from exc
 
     return {"ok": True}
 
@@ -4708,7 +4879,6 @@ def auto_classify_all_complaints(
     payload: AutoClassifyRequest,
     admin_user: CurrentUser = Depends(require_admin),
 ):
-    del admin_user
     updated_items: list[dict[str, Any]] = []
 
     with get_db_conn() as conn:
@@ -4764,6 +4934,7 @@ def auto_classify_all_complaints(
                     WHERE id = %s::uuid
                     RETURNING id, user_id, title, description, category, priority, department, status,
                               assigned_to, admin_notes, is_anonymous, attachments, evidence_types, analysis, source_language,
+                              student_name, student_email, student_phone, student_department, student_registration_number,
                               decision_state, risk_score, routing_confidence, decision_source, decision_reason,
                               fairness_flags, requires_human_review, escalation_level, sla_due_at, quarantined_reason, auto_route_version,
                               last_student_update_at, last_public_admin_update_at, last_user_viewed_updates_at, last_admin_viewed_updates_at,

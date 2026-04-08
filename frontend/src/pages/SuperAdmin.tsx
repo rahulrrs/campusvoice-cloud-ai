@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, ShieldCheck, UserCog, Users } from "lucide-react";
+import { ClipboardList, Copy, ShieldCheck, UserCog, Users } from "lucide-react";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -149,6 +149,22 @@ const SuperAdmin = () => {
     <div className="min-h-screen flex flex-col bg-background">
       <Header />
       <main className="container mx-auto flex-1 space-y-6 px-4 py-8">
+        <section className="flex flex-col gap-4 rounded-[26px] border border-slate-200/80 bg-white/95 px-5 py-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-2">
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-950">Super Admin Portal</h1>
+            <p className="max-w-3xl text-sm leading-6 text-slate-600">
+              Manage staff access here, then jump into the complaint review queue whenever you need to inspect or work cases.
+            </p>
+          </div>
+
+          <Link to="/admin">
+            <Button type="button" variant="outline" className="bg-white">
+              <ClipboardList className="mr-2 h-4 w-4" />
+              Open Admin Review
+            </Button>
+          </Link>
+        </section>
+
         <section className="grid gap-4 md:grid-cols-4">
           <Card className="shadow-card">
             <CardHeader><CardTitle className="text-sm">Admin Records</CardTitle></CardHeader>

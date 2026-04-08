@@ -18,6 +18,8 @@ interface ComplaintUpdatesPanelProps {
     body: string;
     isInternal?: boolean;
   }>;
+  embedded?: boolean;
+  hideTitle?: boolean;
 }
 
 const ComplaintUpdatesPanel = ({
@@ -30,6 +32,8 @@ const ComplaintUpdatesPanel = ({
   isSubmitting = false,
   canSubmit = true,
   templates = [],
+  embedded = false,
+  hideTitle = false,
 }: ComplaintUpdatesPanelProps) => {
   const [body, setBody] = useState("");
   const [isInternal, setIsInternal] = useState(false);
@@ -43,11 +47,13 @@ const ComplaintUpdatesPanel = ({
   };
 
   return (
-    <div className="rounded-2xl border bg-card p-5">
-      <div className="mb-4 flex items-center gap-2">
-        <MessageSquareText className="h-4 w-4 text-primary" />
-        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-      </div>
+    <div className={embedded ? "space-y-4" : "rounded-2xl border bg-card p-5"}>
+      {!hideTitle ? (
+        <div className={embedded ? "flex items-center gap-2" : "mb-4 flex items-center gap-2"}>
+          <MessageSquareText className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+        </div>
+      ) : null}
 
       <div className="space-y-3">
         {updates.length === 0 ? (

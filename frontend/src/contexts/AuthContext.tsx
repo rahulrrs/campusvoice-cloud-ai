@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { awsAuth, type AuthSession, type AuthUser } from "@/integrations/aws/client";
 
 interface AuthContextType {
@@ -30,6 +31,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+
+  const resetUserQueries = () => {
+    queryClient.removeQueries({ queryKey: ["access-profile"] });
+    queryClient.removeQueries({ queryKey: ["notifications"] });
+    queryClient.removeQueries({ queryKey: ["complaints"] });
+    queryClient.removeQueries({ queryKey: ["admin-complaints"] });
+    queryClient.removeQueries({ queryKey: ["admin-users"] });
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -73,6 +83,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return firstAttempt;
     }
 
+    resetUserQueries();
     const sessionResult = await awsAuth.getSession();
     const currentSession = sessionResult.data.session;
     setSession(currentSession);
@@ -85,6 +96,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     await awsAuth.signOut();
     setSession(null);
     setUser(null);
+    resetUserQueries();
   };
 
   const signInWithGoogle = async () => {

@@ -377,6 +377,11 @@ export interface ComplaintRecord {
   is_anonymous?: boolean;
   attachments?: string[];
   evidence_types?: string[];
+  student_name?: string | null;
+  student_email?: string | null;
+  student_phone?: string | null;
+  student_department?: string | null;
+  student_registration_number?: string | null;
   analysis?: ComplaintAnalysisBundle;
   source_language?: string | null;
   decision_state?: string;
@@ -437,6 +442,11 @@ export interface CreateComplaintPayload {
   is_anonymous?: boolean;
   user_id?: string;
   status?: string;
+  student_name?: string;
+  student_email?: string;
+  student_phone?: string;
+  student_department?: string;
+  student_registration_number?: string;
 }
 
 export interface ComplaintListFilters {

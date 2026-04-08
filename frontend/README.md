@@ -35,10 +35,17 @@ Use the mode-specific env files in this folder instead of editing one `.env` rep
   Uses [frontend/.env.local-direct](/d:/Dev/programming/online_complaint_system/frontend/.env.local-direct) for local frontend + direct local backend on `http://localhost:8000`
 - `npm run dev:local-docker`
   Uses [frontend/.env.local-docker](/d:/Dev/programming/online_complaint_system/frontend/.env.local-docker) for local frontend + Docker Compose backend on `http://localhost`
+- `npm run build:local-direct`
+  Builds the frontend with [frontend/.env.local-direct](/d:/Dev/programming/online_complaint_system/frontend/.env.local-direct)
+- `npm run build:local-docker`
+  Builds the frontend with [frontend/.env.local-docker](/d:/Dev/programming/online_complaint_system/frontend/.env.local-docker)
 - `npm run build:cloudfront-tunnel`
   Uses [frontend/.env.cloudfront-tunnel](/d:/Dev/programming/online_complaint_system/frontend/.env.cloudfront-tunnel) for CloudFront frontend + publicly tunneled local backend
 - `npm run build:production`
   Uses [frontend/.env.production](/d:/Dev/programming/online_complaint_system/frontend/.env.production) for CloudFront frontend + public production backend such as EC2
+
+Important:
+`frontend/.env.local-direct` is only for local frontend development and local API testing. If you deploy to S3 or CloudFront, build with `build:production` or `build:cloudfront-tunnel` so the compiled bundle picks up the correct public API URL.
 
 Mode mapping for your 5 scenarios:
 
@@ -157,6 +164,40 @@ npm run build
 ```
 
 Upload the `dist` directory to an S3 bucket and serve it through CloudFront.
+
+## Recommended S3 deploy
+
+Use the deploy helper instead of manually copying files. It rebuilds the app, syncs `dist` to S3 with `--delete`, uploads `index.html` with no-cache headers, and can invalidate CloudFront in the same step.
+
+PowerShell example for production:
+
+```powershell
+cd d:\Dev\programming\online_complaint_system\frontend
+$env:FRONTEND_S3_BUCKET="your-frontend-bucket"
+$env:FRONTEND_CLOUDFRONT_DISTRIBUTION_ID="E1234567890"
+npm.cmd run deploy:s3:production
+```
+
+PowerShell example for a CloudFront frontend talking to a local tunneled backend:
+
+```powershell
+cd d:\Dev\programming\online_complaint_system\frontend
+$env:FRONTEND_S3_BUCKET="your-frontend-bucket"
+$env:FRONTEND_CLOUDFRONT_DISTRIBUTION_ID="E1234567890"
+npm.cmd run deploy:s3:cloudfront-tunnel
+```
+
+Optional environment variables:
+
+- `FRONTEND_S3_PREFIX` to upload into a bucket prefix instead of the bucket root
+- `FRONTEND_INVALIDATION_PATHS` to override the default CloudFront invalidation path list, for example `/*`
+- `AWS_PROFILE` and `AWS_REGION` if you want the deploy script to target a specific AWS CLI profile or region
+
+If you already built locally and only want to upload the existing `dist` output, run:
+
+```powershell
+node .\scripts\deploy-s3.mjs --skip-build --bucket your-frontend-bucket
+```
 
 ## Production architecture
 

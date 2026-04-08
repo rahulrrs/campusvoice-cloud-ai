@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { AlertCircle, CheckCircle2, FileAudio, FileText, Files, Mic, MicOff, Send, ShieldOff, Upload } from "lucide-react";
+import { AlertCircle, ArrowRight, CheckCircle2, FileAudio, FileText, Files, Mic, MicOff, Send, ShieldOff, Sparkles, Upload } from "lucide-react";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,13 @@ const SubmitComplaint = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [isAnonymous, setIsAnonymous] = useState(true);
   const [formData, setFormData] = useState({ title: "", description: "" });
+  const [studentDetails, setStudentDetails] = useState({
+    studentName: "",
+    studentEmail: user?.email ?? "",
+    studentPhone: "",
+    studentDepartment: "",
+    studentRegistrationNumber: "",
+  });
   const [isSuccessDialogOpen, setIsSuccessDialogOpen] = useState(false);
 
   useEffect(() => {
@@ -56,6 +63,13 @@ const SubmitComplaint = () => {
       navigate("/admin");
     }
   }, [user, loading, isAdmin, isSuperAdmin, navigate]);
+
+  useEffect(() => {
+    setStudentDetails((current) => ({
+      ...current,
+      studentEmail: current.studentEmail || user?.email || "",
+    }));
+  }, [user?.email]);
 
   const totalSelectedSizeMb = useMemo(
     () =>
@@ -186,6 +200,13 @@ const SubmitComplaint = () => {
 
   const resetForm = () => {
     setFormData({ title: "", description: "" });
+    setStudentDetails({
+      studentName: "",
+      studentEmail: user?.email ?? "",
+      studentPhone: "",
+      studentDepartment: "",
+      studentRegistrationNumber: "",
+    });
     setSelectedFiles([]);
     setSelectedAudioFiles([]);
     setIsAnonymous(true);
@@ -306,6 +327,11 @@ const SubmitComplaint = () => {
       description: formData.description.trim(),
       user_id: user.id,
       is_anonymous: isAnonymous,
+      student_name: studentDetails.studentName.trim(),
+      student_email: (studentDetails.studentEmail.trim() || user.email || "").trim(),
+      student_phone: studentDetails.studentPhone.trim(),
+      student_department: studentDetails.studentDepartment.trim(),
+      student_registration_number: studentDetails.studentRegistrationNumber.trim(),
       attachment_keys: attachmentKeys,
       queued_attachments: queuedAttachments,
       evidence_types: evidenceTypes,
@@ -328,6 +354,11 @@ const SubmitComplaint = () => {
         title: payload.title,
         description: payload.description,
         is_anonymous: payload.is_anonymous,
+        student_name: payload.student_name,
+        student_email: payload.student_email,
+        student_phone: payload.student_phone,
+        student_department: payload.student_department,
+        student_registration_number: payload.student_registration_number,
         attachment_keys: payload.attachment_keys,
         queued_attachments: payload.queued_attachments,
         evidence_types: payload.evidence_types,
@@ -379,24 +410,73 @@ const SubmitComplaint = () => {
     <div className="min-h-screen flex flex-col bg-background">
       <Header />
       <Dialog open={isSuccessDialogOpen} onOpenChange={setIsSuccessDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader className="items-center text-center sm:items-center sm:text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-success/10 text-success">
-              <CheckCircle2 className="h-7 w-7" />
-            </div>
-            <DialogTitle>Complaint submitted successfully</DialogTitle>
-            <DialogDescription>
-              Your complaint has been sent to the review queue. You can track progress from the dashboard or submit another issue now.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="flex-col gap-2 sm:flex-col sm:space-x-0">
-            <Button type="button" variant="hero" onClick={() => navigate("/dashboard")}>
-              Go to Dashboard
-            </Button>
-            <Button type="button" variant="outline" onClick={() => setIsSuccessDialogOpen(false)}>
-              Submit Another Complaint
-            </Button>
-          </DialogFooter>
+        <DialogContent className="overflow-hidden border-white/70 bg-white/95 p-0 shadow-elevated sm:max-w-xl">
+          <div className="relative">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(110,231,183,0.3),transparent_34%),radial-gradient(circle_at_top_right,rgba(96,165,250,0.24),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(240,253,244,0.96))]" />
+            <motion.div
+              initial={{ opacity: 0, y: 14, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.28, ease: "easeOut" }}
+              className="relative space-y-6 p-6 sm:p-8"
+            >
+              <DialogHeader className="items-center space-y-4 text-center sm:items-center sm:text-center">
+                <motion.div
+                  initial={{ scale: 0.85, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ delay: 0.08, duration: 0.24, ease: "easeOut" }}
+                  className="relative flex h-20 w-20 items-center justify-center rounded-[28px] border border-emerald-200/80 bg-white/80 shadow-card"
+                >
+                  <div className="absolute inset-2 rounded-[22px] bg-emerald-100/80" />
+                  <div className="absolute -right-1 -top-1 flex h-7 w-7 items-center justify-center rounded-full gradient-primary text-white shadow-sm">
+                    <Sparkles className="h-3.5 w-3.5" />
+                  </div>
+                  <CheckCircle2 className="relative h-10 w-10 text-success" />
+                </motion.div>
+
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Successfully Submitted
+                  </div>
+                  <DialogTitle className="heading-display text-3xl font-bold leading-tight text-foreground">
+                    Your complaint is now in the review queue
+                  </DialogTitle>
+                  <DialogDescription className="mx-auto max-w-md text-sm leading-6 text-muted-foreground">
+                    Everything went through successfully. You can track updates from the dashboard or stay here and file another issue right away.
+                  </DialogDescription>
+                </div>
+              </DialogHeader>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-white/80 bg-white/85 p-4 text-center shadow-card">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Status</p>
+                  <p className="mt-2 text-base font-semibold text-foreground">Submitted</p>
+                </div>
+                <div className="rounded-2xl border border-white/80 bg-white/85 p-4 text-center shadow-card">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Visibility</p>
+                  <p className="mt-2 text-base font-semibold text-foreground">Saved securely</p>
+                </div>
+                <div className="rounded-2xl border border-white/80 bg-white/85 p-4 text-center shadow-card">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Next Step</p>
+                  <p className="mt-2 text-base font-semibold text-foreground">Team review</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-emerald-200/70 bg-emerald-50/80 px-4 py-3 text-sm text-emerald-900">
+                You will be able to follow status changes, responses, and resolution updates from your complaint dashboard.
+              </div>
+
+              <DialogFooter className="flex-col gap-3 sm:flex-col sm:space-x-0">
+                <Button type="button" variant="hero" size="lg" className="w-full" onClick={() => navigate("/dashboard")}>
+                  Go to Dashboard
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+                <Button type="button" variant="outline" size="lg" className="w-full bg-white/80" onClick={() => setIsSuccessDialogOpen(false)}>
+                  Submit Another Complaint
+                </Button>
+              </DialogFooter>
+            </motion.div>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -483,6 +563,84 @@ const SubmitComplaint = () => {
                         checked={isAnonymous}
                         onCheckedChange={setIsAnonymous}
                       />
+                    </div>
+
+                    <div className="space-y-4 rounded-2xl border bg-background p-5">
+                      <div className="space-y-1">
+                        <Label className="text-base font-semibold">Student Details</Label>
+                        <p className="text-sm text-muted-foreground">
+                          Add your student information so admins can contact or verify the case if follow-up is needed.
+                          {isAnonymous
+                            ? " These details stay hidden from reviewers while anonymous mode is on."
+                            : " These details will be visible to admins because anonymous mode is off."}
+                        </p>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="student-name">Student Name</Label>
+                          <Input
+                            id="student-name"
+                            value={studentDetails.studentName}
+                            placeholder="Your full name"
+                            onChange={(event) =>
+                              setStudentDetails((current) => ({ ...current, studentName: event.target.value }))
+                            }
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="student-email">Student Email</Label>
+                          <Input
+                            id="student-email"
+                            type="email"
+                            value={studentDetails.studentEmail}
+                            placeholder="student@college.edu"
+                            onChange={(event) =>
+                              setStudentDetails((current) => ({ ...current, studentEmail: event.target.value }))
+                            }
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="student-phone">Phone Number</Label>
+                          <Input
+                            id="student-phone"
+                            value={studentDetails.studentPhone}
+                            placeholder="Contact number"
+                            onChange={(event) =>
+                              setStudentDetails((current) => ({ ...current, studentPhone: event.target.value }))
+                            }
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="student-department">Department / Program</Label>
+                          <Input
+                            id="student-department"
+                            value={studentDetails.studentDepartment}
+                            placeholder="CSE, MBA, BCA, Hostel Block A..."
+                            onChange={(event) =>
+                              setStudentDetails((current) => ({ ...current, studentDepartment: event.target.value }))
+                            }
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="student-registration-number">Student ID / Registration Number</Label>
+                        <Input
+                          id="student-registration-number"
+                          value={studentDetails.studentRegistrationNumber}
+                          placeholder="College roll number or registration ID"
+                          onChange={(event) =>
+                            setStudentDetails((current) => ({
+                              ...current,
+                              studentRegistrationNumber: event.target.value,
+                            }))
+                          }
+                        />
+                      </div>
                     </div>
 
                     <div className="space-y-4 rounded-2xl border bg-muted/20 p-4">

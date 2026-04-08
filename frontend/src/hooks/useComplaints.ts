@@ -21,6 +21,11 @@ export interface Complaint {
   is_anonymous?: boolean;
   attachments?: string[];
   evidence_types?: string[];
+  student_name?: string | null;
+  student_email?: string | null;
+  student_phone?: string | null;
+  student_department?: string | null;
+  student_registration_number?: string | null;
   analysis?: ComplaintAnalysisBundle;
   source_language?: string | null;
   submitted_at?: string | null;
@@ -48,6 +53,11 @@ export interface CreateComplaintData {
   evidence_types?: string[];
   is_anonymous?: boolean;
   already_queued?: boolean;
+  student_name?: string;
+  student_email?: string;
+  student_phone?: string;
+  student_department?: string;
+  student_registration_number?: string;
 }
 
 const normalizeServerStatus = (status: string | undefined) => {
@@ -65,6 +75,11 @@ const normalizeOfflineComplaint = (p: PendingComplaint): Complaint => ({
   status: "pending_sync",
   is_anonymous: p.data.is_anonymous ?? true,
   evidence_types: p.data.evidence_types ?? [],
+  student_name: p.data.student_name ?? null,
+  student_email: p.data.student_email ?? null,
+  student_phone: p.data.student_phone ?? null,
+  student_department: p.data.student_department ?? null,
+  student_registration_number: p.data.student_registration_number ?? null,
   source_language: p.data.source_language,
   submitted_at: new Date(p.createdAt).toISOString(),
   last_student_update_at: new Date(p.createdAt).toISOString(),
@@ -162,10 +177,10 @@ export const useCreateComplaint = () => {
         return { ok: true };
       }
 
-      return await complaintsApi.create({
-        ...data,
-        category: "Uncategorized",
-        priority: "medium",
+        return await complaintsApi.create({
+          ...data,
+          category: "Uncategorized",
+          priority: "medium",
         is_anonymous: data.is_anonymous ?? true,
         attachments: data.attachment_keys ?? [],
         evidence_types: data.evidence_types ?? [],
@@ -210,6 +225,11 @@ export async function syncOfflineComplaints(userId: string) {
         is_anonymous: p.data.is_anonymous ?? true,
         attachments: attachmentKeys,
         evidence_types: p.data.evidence_types ?? [],
+        student_name: p.data.student_name,
+        student_email: p.data.student_email,
+        student_phone: p.data.student_phone,
+        student_department: p.data.student_department,
+        student_registration_number: p.data.student_registration_number,
         user_id: userId,
         status: "submitted",
       };

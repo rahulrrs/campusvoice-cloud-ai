@@ -17,9 +17,21 @@ const Header = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
-  const { data: accessProfile } = useAccessProfile();
+  const accessProfileQuery = useAccessProfile();
+  const accessProfile = accessProfileQuery.data;
   const { toast } = useToast();
   const isAdmin = Boolean(accessProfile?.is_admin);
+  const isSuperAdmin = Boolean(accessProfile?.is_super_admin);
+  const isAccessLoading = Boolean(user) && accessProfileQuery.isPending;
+  const isAdminRoute = location.pathname.startsWith("/admin");
+  const isSuperAdminRoute = location.pathname.startsWith("/super-admin");
+  const shouldShowAdminReviewLink = isAdmin || isAdminRoute || isSuperAdminRoute;
+  const shouldShowSuperAdminLink = isSuperAdmin || isSuperAdminRoute;
+
+  const staffNavItems = [
+    ...(shouldShowAdminReviewLink ? [{ path: "/admin", label: "Admin Review", icon: ShieldCheck }] : []),
+    ...(shouldShowSuperAdminLink ? [{ path: "/super-admin", label: "Super Admin", icon: ShieldCheck }] : []),
+  ];
 
   const notificationsQuery = useQuery({
     queryKey: ["notifications", user?.id],
@@ -30,18 +42,24 @@ const Header = () => {
   });
   const unreadCount = notificationsQuery.data?.total ?? 0;
 
-  const navItems = isAdmin
+  const navItems = isAccessLoading
     ? [
         { path: "/", label: "Home", icon: null },
         { path: "/notifications", label: "Notifications", icon: Bell, count: unreadCount },
-        { path: "/admin", label: "Admin", icon: ShieldCheck },
+        ...staffNavItems,
       ]
-    : [
-        { path: "/", label: "Home", icon: null },
-        { path: "/dashboard", label: "My Complaints", icon: LayoutDashboard },
-        { path: "/notifications", label: "Notifications", icon: Bell, count: unreadCount },
-        { path: "/submit", label: "Submit Complaint", icon: Plus },
-      ];
+    : isAdmin
+      ? [
+          { path: "/", label: "Home", icon: null },
+          { path: "/notifications", label: "Notifications", icon: Bell, count: unreadCount },
+          ...staffNavItems,
+        ]
+      : [
+          { path: "/", label: "Home", icon: null },
+          { path: "/dashboard", label: "My Complaints", icon: LayoutDashboard },
+          { path: "/notifications", label: "Notifications", icon: Bell, count: unreadCount },
+          { path: "/submit", label: "Submit Complaint", icon: Plus },
+        ];
 
   const isActive = (path: string) => location.pathname === path;
 
